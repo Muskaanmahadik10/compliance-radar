@@ -1,0 +1,41 @@
+{
+  "certificate_type": "document_erasure",
+  "doc_id": "POL-ENV-009",
+  "content_sha256": "4f7adae2af71b8cdbd12b0c98eff92bc345f80d1322323340c1f212be3174fb8",
+  "requested_by": "dpo@company.example",
+  "reason": "test erasure",
+  "completed_at": "2026-11-12T09:42:20.847038+00:00",
+  "chunks_removed": 1,
+  "source_file_removed": true,
+  "cache_entries_purged": 0,
+  "probes": 1,
+  "retrieved_before": {
+    "dense": 1,
+    "sparse": 1,
+    "hybrid": 1
+  },
+  "retrieved_after": {
+    "dense": 0,
+    "sparse": 0,
+    "hybrid": 0
+  },
+  "answers_citing_after": 0,
+  "briefs_citing_document": [
+    "BRF-5a4d6351",
+    "BRF-744c4b28"
+  ],
+  "models_in_use": {
+    "cheap": "mock",
+    "strong": "mock"
+  },
+  "checks": {
+    "baseline_document_was_retrievable": true,
+    "no_chunks_remaining": true,
+    "no_probe_retrieves_document": true,
+    "no_answer_cites_document": true,
+    "collection_scan_clean": true
+  },
+  "verified": true,
+  "scope_note": "Retrieval-store erasure. No model in use was trained on this document; fine-tuned models would additionally require retraining or unlearning.",
+  "signature": "4699ce51e680e2b83754605f6c325728857c15194a44f55fc2a79189200991f1"
+}

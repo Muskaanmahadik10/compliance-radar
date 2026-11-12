@@ -9,7 +9,7 @@ description = "Real-time compliance and supplier-risk copilot for electronics ma
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "langgraph>=0.2", "langchain-core>=0.3", "langchain-openai>=0.2", "langchain-anthropic>=0.2",
+  "langgraph>=0.2", "langgraph-checkpoint-sqlite>=2", "langgraph-checkpoint-postgres>=2", "mcp>=2.0", "langchain-core>=0.3", "langchain-openai>=0.2", "langchain-anthropic>=0.2",
   "qdrant-client>=1.12", "fastembed>=0.4",
   "redis>=5", "fakeredis>=2.26",
   "sqlalchemy>=2", "psycopg[binary]>=3.1",
@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ui = ["streamlit>=1.32", "plotly>=5.18"]
+ui = ["streamlit>=1.32", "plotly>=5.18", "pandas>=2.1"]
 eval = ["ragas>=0.2", "datasets>=2.19"]
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5", "mypy>=1.10", "pre-commit>=3.7"]
 
@@ -38,6 +38,7 @@ filterwarnings = ["ignore::UserWarning", "ignore::DeprecationWarning"]
 [tool.ruff]
 line-length = 140
 target-version = "py311"
+extend-exclude = ["colab"]  # notebook style is checked by eye
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]

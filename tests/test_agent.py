@@ -87,3 +87,22 @@ def test_verify_removes_invented_ids_and_citations(company):
     assert [a["id"] for a in out["draft"]["affected"]] == ["S0001"]
     assert any("S9999" in f for f in out["auto_findings"]) and any("without a valid citation" in f for f in out["auto_findings"])
     _RUNS.pop("t-verify", None)
+
+
+def test_verify_rejects_another_suppliers_contract_as_evidence(company):
+    from radar.agent.graph import _RUNS, verify
+
+    cfg = {"configurable": {"thread_id": "t-verify2"}}
+    ev = [{"doc_id": "CTR-S0111", "section": "6 Change notification", "citation": "CTR-S0111 §6 Change notification", "text": "x", "doc_type": "contract"}]
+    cite = {"doc_id": "CTR-S0111", "section": "6 Change notification", "quote": ""}
+    state = {"evidence": ev, "suppliers": [{"supplier_id": "S0111"}, {"supplier_id": "S0135"}], "parts": [],
+             "draft": {"citations": [dict(cite)], "actions": [{"action": "Obtain change notification", "owner_role": "Procurement", "deadline": "within 90 days", "citations": [dict(cite)]}],
+                       "affected": [{"kind": "supplier", "id": "S0111", "name": "a", "why": "w", "citations": [dict(cite)]},
+                                    {"kind": "supplier", "id": "S0135", "name": "b", "why": "w", "citations": [dict(cite)]},
+                                    {"kind": "contract_clause", "id": "CTR-S0038", "name": "c", "why": "w", "citations": []}]}}
+    out = verify(state, cfg)
+    by_id = {a["id"]: a for a in out["draft"]["affected"]}
+    assert by_id["S0111"]["citations"] and not by_id["S0135"]["citations"]
+    assert any("another supplier's contract" in f for f in out["auto_findings"])
+    assert any("CTR-S0038 has no citation" in f for f in out["auto_findings"])
+    _RUNS.pop("t-verify2", None)

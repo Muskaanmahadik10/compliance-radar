@@ -44,8 +44,10 @@ class MockChatModel(BaseChatModel):
                 "Which contract clauses require supplier notification or declarations?",
             ]})
         if "TASK: chat" in text:
-            cites = re.findall(r"\[(\S+ §[^\]]+)\]", text)
-            return f"Based on the retrieved documents: {text[-400:].strip()[:200]}... (see {', '.join(dict.fromkeys(cites[:3])) or 'no sources'})"
+            passages = [(c, body) for c, body in re.findall(r"^\[([A-Z]+-[A-Z0-9-]+ §[^\]]+)\] (.*)$", text, flags=re.M) if not c.startswith("DOC-ID")]
+            if not passages:
+                return "The retrieved passages do not contain the answer."
+            return " ".join(f"{body[:160].rstrip()} [{c}]." for c, body in passages[:2])
         if "Classify this regulatory" in text:
             return "other"
         return "ok"

@@ -1,0 +1,46 @@
+{
+  "labels": [
+    "pfas",
+    "rohs",
+    "reach_svhc",
+    "conflict_minerals",
+    "rba_labour",
+    "export_control",
+    "csrd_esg",
+    "battery",
+    "packaging",
+    "cybersecurity",
+    "data_protection",
+    "supplier_incident",
+    "other"
+  ],
+  "results": [
+    {
+      "tier": "rules",
+      "n": 52,
+      "accuracy": 0.596,
+      "macro_f1": 0.622,
+      "top_confusions": [
+        "rohs->other x3",
+        "export_control->other x3",
+        "battery->other x3",
+        "cybersecurity->other x3"
+      ],
+      "cost_usd": 0.0
+    },
+    {
+      "tier": "rules + LLM fallback",
+      "n": 52,
+      "accuracy": 0.942,
+      "macro_f1": 0.943,
+      "top_confusions": [
+        "rohs->other x1",
+        "rba_labour->conflict_minerals x1",
+        "battery->conflict_minerals x1"
+      ],
+      "cost_usd": 0.00067,
+      "llm_calls": 24,
+      "decided_by_llm": 24
+    }
+  ]
+}

@@ -47,6 +47,32 @@ MATERIAL_TOPIC: dict[str, Topic] = {
 }
 
 
+# Distinctive words that identify a material in a regulation or news text (English and Traditional Chinese).
+MATERIAL_ALIASES: dict[str, list[str]] = {
+    "PTFE coating": [r"\bptfe\b", r"non-stick"],
+    "fluoropolymer gasket": [r"fluoropolymer"],
+    "PFAS surfactant": [r"pfas surfactant"],
+    "lead solder": [r"lead in .{0,40}solder", r"lead solder", r"leaded solder"],
+    "cadmium plating": [r"\bcadmium\b"],
+    "hexavalent chromium": [r"hexavalent chromium", r"chromium vi\b", r"\bcr\(vi\)"],
+    "DEHP plasticizer": [r"\bdehp\b", r"phthalate"],
+    "brominated flame retardant": [r"brominated flame retardant", r"\bpbde\b", r"\bpbb\b"],
+    "bisphenol A": [r"bisphenol a\b", r"\bbpa\b"],
+    "tantalum capacitor": [r"tantalum"],
+    "tin plating": [r"\btin\b"],
+    "tungsten contact": [r"tungsten"],
+    "cobalt cathode": [r"\bcobalt\b"],
+    "lithium-ion cell": [r"lithium[- ]ion", r"\bli-ion\b", r"鋰離子"],
+    "nickel-metal hydride cell": [r"nickel[- ]metal hydride", r"\bnimh\b"],
+    "EPS foam packaging": [r"\beps\b", r"expanded polystyrene", r"styrofoam"],
+    "PVC blister": [r"\bpvc\b"],
+    "high-performance FPGA": [r"\bfpga\b", r"可程式邏輯"],
+    "GaN RF amplifier": [r"\bgan\b", r"gallium nitride", r"氮化鎵"],
+    "encryption module": [r"encryption", r"cryptograph", r"加密"],
+    "aluminium housing": [r"alumini?um"],
+}
+
+
 class Supplier(BaseModel):
     supplier_id: str
     name: str

@@ -1,0 +1,27 @@
+# Explaining ComplianceRadar in an interview
+
+## 30-second pitch
+
+"ComplianceRadar watches regulatory and news feeds in real time and, when something relevant lands (a PFAS restriction, a RoHS exemption expiring, a supplier added to the US Entity List), it works out which of our suppliers, parts, products and contract clauses are affected and drafts an impact brief with every claim cited. The numbers come from SQL, the reasoning from an LLM, and a verifier removes anything the model made up before a person approves it. It's a LangGraph pipeline on Qdrant, Redis Streams and Postgres with evals in CI, and it includes a right-to-be-forgotten module that deletes a document and proves it can no longer be retrieved or cited."
+
+## Design decisions and the questions they answer
+
+| Question you'll get | Answer |
+|---|---|
+| Why LangGraph and not a simple chain? | The work has a shape: fan out research per sub-question in parallel (`Send`), loop back once if the critic rejects, then **pause for a human** (`interrupt`) and resume later from a durable checkpoint (SQLite locally, Postgres in compose). A chain can't pause for a day and resume. |
+| How do you stop hallucinated suppliers or numbers? | Three layers. (1) Counts and affected lists are computed by SQL in `map_impact`; the model's schema (`BriefDraft`) has no field for them. (2) `verify` checks every cited section exists in the retrieved evidence and every supplier/part id exists in the SQL result, and **removes** what doesn't. (3) An LLM critic checks that cited passages actually support the claims; one revision loop. |
+| Why hybrid search and a reranker? | Measured, not assumed. On paraphrased questions BM25 alone gets 40% hit@1, dense 64%, hybrid lifts hit@5 to 84%, and the cross-encoder reranker lifts hit@1 to 76%. On direct questions everything is ~100%, which is why I built the harder set. |
+| What does "real-time" mean here? | Feed pollers publish to a Redis Stream; a consumer-group worker deduplicates (exact id + MinHash LSH on titles), classifies, stores and publishes relevant events to a second stream. Chat answers stream token by token over SSE. |
+| A bug you found? | After a restart the deduper only remembered stored ids, not titles, so a near-duplicate report of the same regulation was stored twice. The idempotency test caught it; the fix re-seeds the LSH from the database on startup. |
+| Another? | With real models the first drafts hid supplier ids ("S???") and the critic rejected them. Cause: my prompt said every statement needs a citation, so the model treated SQL data as "uncited". Fix: the prompts now separate SYSTEM OF RECORD blocks (authoritative, no citation) from EVIDENCE passages (must cite). |
+| And provider quirks? | Strict JSON-schema mode rejected optional fields; hosted reasoning models sometimes answer in prose instead of calling the tool. So structured output goes through function calling with retries (`call_structured`), and if drafting still fails the reviewer gets a clearly labelled fallback brief built from SQL and evidence. The pipeline never crashes and never invents. |
+| How is cost controlled? | A router sends decomposition and rewriting to a small model and drafting/critique to a strong one; a LangChain callback (`CostLedger`) records tokens and dollars per brief, stored with the brief. |
+| What about confidential data? | Embeddings, BM25 and reranking run locally (fastembed/ONNX); only the retrieved passages go to the LLM, PII is masked first, and the provider is swappable for a local model (Ollama/vLLM) with one env var. |
+| Prompt injection? | Retrieved text is data: it is scanned and redacted for instruction-like content, wrapped as untrusted, `web_fetch` is allow-listed, write tools need approval, and the agent has no tool to approve its own brief. |
+| What is "right to be forgotten" in RAG? | Delete from vector store, DB, disk and caches, then verify: zero chunks, no probe question (built from the document's own wording) retrieves it in dense, sparse or hybrid mode, no answer cites it, a full collection scan is clean. The result is an HMAC-signed certificate in the audit log. Honest limit: the LLM wasn't trained on the documents; a fine-tuned model would also need retraining or unlearning, which is my thesis area. |
+| Why synthetic company data? | Real supplier masters are confidential, and evaluation needs ground truth ("this event affects exactly these 21 suppliers"). Feeds are real public sources; a replay fixture makes tests deterministic. |
+| How do you test LLM code in CI? | A deterministic `MockChatModel` implements the same LangChain interface including structured output, so 28 tests and the mock evaluation run with no key. A second CI job runs the same tests against real Qdrant, Redis and Postgres service containers. |
+
+## What I would do next
+
+Multilingual embeddings (bge-m3) with a Traditional Chinese evaluation set; a LoRA-fine-tuned classifier compared with the rule-based and zero-shot tiers; RAGAS faithfulness on chat answers; Langfuse dashboards for cost per brief; Kubernetes manifests.

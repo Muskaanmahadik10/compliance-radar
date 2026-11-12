@@ -31,7 +31,7 @@ from sqlalchemy import insert, update
 
 from radar.agent.prompts import CRITIC, DECOMPOSE, DRAFT, SYSTEM
 from radar.config import settings
-from radar.data.schemas import MATERIAL_TOPIC, BriefDraft, CriticVerdict, ImpactBrief, SubQuestions
+from radar.data.schemas import MATERIAL_ALIASES, MATERIAL_TOPIC, BriefDraft, CriticVerdict, ImpactBrief, SubQuestions
 from radar.db.schema import audit_log, briefs, tasks
 from radar.db.schema import events as events_t
 from radar.infra import get_db_engine
@@ -108,7 +108,7 @@ def triage(state: BriefState, config: RunnableConfig) -> dict:
     ev = state["event"]
     text = f"{ev['title']} {ev.get('summary', '')}".lower()
     mats = [m for m, t in MATERIAL_TOPIC.items() if t.value == ev["topic"]]
-    mentioned = [m for m in MATERIAL_TOPIC if m.lower() in text or m.lower().rstrip("s") in text]
+    mentioned = [m for m in MATERIAL_TOPIC if m.lower() in text or any(re.search(pat, text) for pat in MATERIAL_ALIASES.get(m, []))]
     # A named material narrows a broad topic ("tantalum capacitor plant fire"); otherwise use the topic's materials.
     materials = mentioned or mats
     countries = sorted({c for w, c in COUNTRY_WORDS.items() if re.search(rf"\b{w}\b", text)}) if ev["topic"] in COUNTRY_SCOPED_TOPICS else []
@@ -249,6 +249,14 @@ def verify(state: BriefState, config: RunnableConfig) -> dict:
             findings.append(f"part {a['id']} is not in the SQL impact result and was removed")
             continue
         a["citations"] = [c for c in a.get("citations", []) if ok_cite(c)]
+        if a["kind"] == "supplier":
+            # A supply agreement binds only its own supplier: CTR-S0111 cannot support a claim about S0135.
+            foreign = [c for c in a["citations"] if c["doc_id"].startswith("CTR-") and c["doc_id"] != f"CTR-{a['id']}"]
+            if foreign:
+                findings.append(f"supplier {a['id']} cited another supplier's contract ({', '.join(c['doc_id'] for c in foreign)}); citation removed")
+                a["citations"] = [c for c in a["citations"] if c not in foreign]
+        if a["kind"] in ("contract_clause", "policy") and not a["citations"]:
+            findings.append(f"{a['kind']} entry {a['id']} has no citation to the section it refers to")
         kept.append(a)
     d["affected"] = kept
     for act in d.get("actions", []):
@@ -264,7 +272,8 @@ def verify(state: BriefState, config: RunnableConfig) -> dict:
     verdict, last_err = None, ""
     try:
         v: CriticVerdict = call_structured(get_router().for_task("critic"), CriticVerdict,
-                                           [SystemMessage(SYSTEM), HumanMessage(CRITIC.format(draft=json.dumps(critic_input, ensure_ascii=False)[:6000], evidence=_fmt_evidence(state["evidence"]), auto_findings=findings or "none"))],
+                                           [SystemMessage(SYSTEM), HumanMessage(CRITIC.format(event=json.dumps({k: state["event"].get(k) for k in ("title", "summary", "jurisdiction", "topic", "published")}, ensure_ascii=False) if state.get("event") else "(not provided)",
+                                                                                         draft=json.dumps(critic_input, ensure_ascii=False)[:6000], evidence=_fmt_evidence(state["evidence"]), auto_findings=findings or "none"))],
                                            config={"callbacks": _callbacks(config)}, attempts=2)
         verdict = v.model_dump()
     except Exception as e:

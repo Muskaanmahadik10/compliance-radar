@@ -1,0 +1,41 @@
+{
+  "certificate_type": "document_erasure",
+  "doc_id": "POL-SEC-010",
+  "content_sha256": "4a8888d6c1fa75666084440d15783bcbfe2c43b94c4780d99d2842026ec41077",
+  "requested_by": "dpo",
+  "reason": "erasure request",
+  "completed_at": "2026-11-12T09:42:05.227463+00:00",
+  "chunks_removed": 1,
+  "source_file_removed": true,
+  "cache_entries_purged": 0,
+  "probes": 1,
+  "retrieved_before": {
+    "dense": 1,
+    "sparse": 1,
+    "hybrid": 1
+  },
+  "retrieved_after": {
+    "dense": 0,
+    "sparse": 0,
+    "hybrid": 0
+  },
+  "answers_citing_after": 0,
+  "briefs_citing_document": [
+    "BRF-3b688f26",
+    "BRF-5a1a288a"
+  ],
+  "models_in_use": {
+    "cheap": "mock",
+    "strong": "mock"
+  },
+  "checks": {
+    "baseline_document_was_retrievable": true,
+    "no_chunks_remaining": true,
+    "no_probe_retrieves_document": true,
+    "no_answer_cites_document": true,
+    "collection_scan_clean": true
+  },
+  "verified": true,
+  "scope_note": "Retrieval-store erasure. No model in use was trained on this document; fine-tuned models would additionally require retraining or unlearning.",
+  "signature": "0a491bfde6f2f1e9f4733ea4d2de9da9c71d3a1dc21d33ea3acae75e9060aba3"
+}
