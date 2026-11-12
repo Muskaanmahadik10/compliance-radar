@@ -26,7 +26,7 @@ from qdrant_client import models
 from sqlalchemy import insert, select, update
 
 from radar import chat
-from radar.config import ARTIFACTS_DIR, DATA_DIR
+from radar.config import DATA_DIR, settings
 from radar.db import create_all
 from radar.db.schema import audit_log, briefs, documents
 from radar.infra import get_db_engine, get_redis
@@ -123,7 +123,7 @@ def forget_document(doc_id: str, requested_by: str, reason: str = "erasure reque
     cert["signature"] = sign(cert)
     with eng.begin() as c:
         c.execute(insert(audit_log), [{"ts": cert["completed_at"], "actor": requested_by, "action": "document_erased", "subject": doc_id, "detail": cert}])
-    out_dir = ARTIFACTS_DIR / "certificates"
+    out_dir = settings.artifacts_dir / "certificates"
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / f"erasure_{doc_id}.json").write_text(json.dumps(cert, indent=2, ensure_ascii=False), encoding="utf-8")
     return cert

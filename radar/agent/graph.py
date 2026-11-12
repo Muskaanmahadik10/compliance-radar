@@ -70,6 +70,7 @@ class BriefState(TypedDict, total=False):
 class RunContext:
     ledger: CostLedger = field(default_factory=CostLedger)
     tools: ToolContext = field(default_factory=ToolContext)
+    drafted_by: str = ""
 
 
 _RUNS: dict[str, RunContext] = {}
@@ -91,13 +92,13 @@ def _callbacks(config: RunnableConfig) -> list:
     return cbs
 
 
-def _fmt_evidence(evidence: list[dict], limit: int = 14) -> str:
+def _fmt_evidence(evidence: list[dict], limit: int = 12, max_chars: int = 480) -> str:
     seen, lines = set(), []
     for h in evidence:
         if h["citation"] in seen:
             continue
         seen.add(h["citation"])
-        lines.append(f"[{h['citation']}] ({h.get('doc_type')}) {h['text']}")
+        lines.append(f"[{h['citation']}] ({h.get('doc_type')}) {h['text'][:max_chars]}")
         if len(lines) >= limit:
             break
     return "\n".join(lines) or "(no passages retrieved)"
@@ -183,8 +184,10 @@ def draft(state: BriefState, config: RunnableConfig) -> dict:
     prompt = DRAFT.format(event=json.dumps(state["event"], ensure_ascii=False), counts=json.dumps(state["counts"]), suppliers=json.dumps(top_sup, ensure_ascii=False),
                           parts=json.dumps(top_parts, ensure_ascii=False), evidence=_fmt_evidence(state["evidence"]), feedback=fb)
     try:
-        written: BriefDraft = call_structured(get_router().for_task("draft_brief"), BriefDraft, [SystemMessage(SYSTEM), HumanMessage(prompt)], config={"callbacks": _callbacks(config)})
+        written: BriefDraft = call_structured(get_router().for_task("draft_brief"), BriefDraft, [SystemMessage(SYSTEM), HumanMessage(prompt)], config={"callbacks": _callbacks(config)},
+                                              fallback=get_router().cheap)
         body = written.model_dump()
+        run_context(config).drafted_by = getattr(written, "_model_used", "")
     except Exception as e:
         body = _fallback_draft(state, str(e))
     # The pipeline, not the model, sets the event id, the approval flag and the SQL-derived counts.
@@ -274,12 +277,18 @@ def verify(state: BriefState, config: RunnableConfig) -> dict:
         v: CriticVerdict = call_structured(get_router().for_task("critic"), CriticVerdict,
                                            [SystemMessage(SYSTEM), HumanMessage(CRITIC.format(event=json.dumps({k: state["event"].get(k) for k in ("title", "summary", "jurisdiction", "topic", "published")}, ensure_ascii=False) if state.get("event") else "(not provided)",
                                                                                          draft=json.dumps(critic_input, ensure_ascii=False)[:6000], evidence=_fmt_evidence(state["evidence"]), auto_findings=findings or "none"))],
-                                           config={"callbacks": _callbacks(config)}, attempts=2)
+                                           config={"callbacks": _callbacks(config)}, attempts=2, fallback=get_router().cheap)
         verdict = v.model_dump()
+        verdict["critic_model"] = getattr(v, "_model_used", "")
     except Exception as e:
-        last_err = str(e)[:200]
+        last_err = str(e)[:160]
     if verdict is None:
-        verdict = {"approved": not any("without a valid citation" in f or "no valid citations" in f for f in findings), "missing_citations": [], "notes": f"critic unavailable ({last_err}); automatic checks only"}
+        # The critic did not run. Record that plainly: automatic checks decide whether a revision is needed, and the
+        # reviewer is told the draft had no second-model review.
+        verdict = {"approved": not any("without a valid citation" in f or "no valid citations" in f for f in findings), "missing_citations": [],
+                   "notes": f"Critic did not run ({last_err}). Automatic grounding checks only.", "critic_ran": False}
+    else:
+        verdict["critic_ran"] = True
     hard_fail = any("no valid citations" in f for f in findings)
     if hard_fail:
         verdict["approved"] = False
@@ -300,7 +309,7 @@ def stage(state: BriefState, config: RunnableConfig) -> dict:
     latency = round(time.time() - state["started"], 2)
     row = {"brief_id": state["brief_id"], "event_id": state["event"]["event_id"], "status": "pending_review",
            "brief": state["draft"] | {"_verdict": state["verdict"], "_auto_findings": state.get("auto_findings", []), "_injection_findings": state.get("injection_findings", []),
-                                      "_models": get_router().names, "_n_evidence": len({h['citation'] for h in state['evidence']})},
+                                      "_models": get_router().names, "_drafted_by": rc.drafted_by or "fallback (no model)", "_n_evidence": len({h['citation'] for h in state['evidence']})},
            "cost_usd": cost["cost_usd"], "latency_s": latency, "created_at": datetime.now(UTC).isoformat()}
     eng = get_db_engine()
     with eng.begin() as c:

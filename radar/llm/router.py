@@ -7,6 +7,7 @@ Every call's token usage is recorded through a LangChain callback so cost per br
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -64,11 +65,11 @@ def _make(model: str, temperature: float = 0.0) -> BaseChatModel:
     if settings.llm_provider == "anthropic":
         from langchain_anthropic import ChatAnthropic
 
-        return ChatAnthropic(model=model, api_key=settings.anthropic_api_key, temperature=temperature, max_tokens=4000)
+        return ChatAnthropic(model=model, api_key=settings.anthropic_api_key, temperature=temperature, max_tokens=settings.max_output_tokens)
     from langchain_openai import ChatOpenAI
 
     extra = {"reasoning_effort": "low"} if "gpt-oss" in model else {}
-    return ChatOpenAI(model=model, api_key=settings.llm_api_key, base_url=settings.llm_base_url, temperature=temperature, max_tokens=6000, max_retries=4, **extra)
+    return ChatOpenAI(model=model, api_key=settings.llm_api_key, base_url=settings.llm_base_url, temperature=temperature, max_tokens=settings.max_output_tokens, max_retries=2, **extra)
 
 
 @dataclass
@@ -94,21 +95,68 @@ def structured(llm: BaseChatModel, schema):
     return llm.with_structured_output(schema, method="function_calling")
 
 
-def call_structured(llm: BaseChatModel, schema, messages: list, config: dict | None = None, attempts: int = 3):
-    """Invoke with structured output and retry. Hosted models occasionally answer in prose instead of calling the tool,
-    or emit arguments that fail validation; both are worth one or two more tries before giving up."""
-    runner = structured(llm, schema)
+def _short_error(e: Exception) -> str:
+    """Exception type plus a short reason, with account identifiers stripped (provider messages can include org ids)."""
+    msg = str(e)
+    low = msg.lower()
+    code = ("request too large for the provider's token limit" if _too_large(msg) else "rate limited" if "429" in msg or "rate limit" in low
+            else "bad request" if "400" in msg else "timeout" if "timeout" in low else msg[:80])
+    return f"{type(e).__name__}: {re.sub(r'org_[A-Za-z0-9]+', 'org_***', code)}"
+
+
+def _too_large(msg: str) -> bool:
+    low = msg.lower()
+    return "413" in msg or "too large" in low or "reduce your message size" in low or "context length" in low
+
+
+def _retry_after_seconds(msg: str) -> float | None:
+    """Parse 'Please try again in 28m1.3s' / '697ms' from a rate-limit message."""
+    m = re.search(r"try again in (?:(\d+)h)?(?:(\d+)m(?!s))?(?:([\d.]+)s)?(?:(\d+)ms)?", msg)
+    if not m or not any(m.groups()):
+        return None
+    h, mi, sec, ms = m.groups()
+    return int(h or 0) * 3600 + int(mi or 0) * 60 + float(sec or 0) + int(ms or 0) / 1000
+
+
+def call_structured(llm: BaseChatModel, schema, messages: list, config: dict | None = None, attempts: int = 3, fallback: BaseChatModel | None = None):
+    """Invoke with structured output, retrying sensibly.
+
+    - Formatting failures (prose instead of a tool call, invalid arguments): short pause, retry.
+    - Rate limits: wait only if the provider says the limit clears within a minute (per-minute limits). A daily quota
+      that clears in half an hour is not worth blocking a request for.
+    - Oversized requests: never retried.
+    - If `fallback` is given and the primary model is exhausted or rate limited, the fallback model gets one try.
+      The returned object carries `_model_used` so the caller can record who actually wrote it.
+    """
     last: Exception | None = None
-    for i in range(attempts):
-        try:
-            out = runner.invoke(messages, config=config)
-            if out is not None:
-                return out
-            last = ValueError("model returned no structured output")
-        except Exception as e:  # provider 400s, validation errors, timeouts
-            last = e
-        time.sleep(1.5 * (i + 1))
-    raise RuntimeError(f"structured call failed after {attempts} attempts: {type(last).__name__}: {str(last)[:200]}")
+    for model in [llm] + ([fallback] if fallback is not None and fallback is not llm else []):
+        runner = structured(model, schema)
+        n = attempts if model is llm else 2
+        for i in range(n):
+            try:
+                out = runner.invoke(messages, config=config)
+                if out is not None:
+                    try:
+                        object.__setattr__(out, "_model_used", getattr(model, "model_name", None) or getattr(model, "model", "?"))
+                    except Exception:
+                        pass
+                    return out
+                last = ValueError("model returned no structured output")
+            except Exception as e:  # provider 400s, validation errors, timeouts, 429s
+                last = e
+                msg = str(e)
+                if _too_large(msg):
+                    break  # retrying an oversized request cannot succeed
+                if "429" in msg or "rate limit" in msg.lower():
+                    wait = _retry_after_seconds(msg)
+                    if wait is None or wait > 60:
+                        break  # daily/long quota: go to the fallback model instead of blocking
+                    if i < n - 1:
+                        time.sleep(min(wait + 1.0, 61.0))
+                    continue
+            if i < n - 1:
+                time.sleep(1.5 * (i + 1))
+    raise RuntimeError(f"structured call failed ({_short_error(last)})")
 
 
 @lru_cache(maxsize=1)

@@ -79,8 +79,10 @@ def run(provider: str = "mock", limit: int | None = None) -> dict:
             "policy_cited": any(c["doc_id"] == policy for c in br["citations"]),
             "grounded_first_try": not removed,
             "actions_cited": bool(br["actions"]) and all(a["citations"] for a in br["actions"]),
-            "critic_approved": bool(br["_verdict"].get("approved")),
-            "fallback": br["title"].startswith("[Automatic fallback]"),
+            "critic_ran": br["_verdict"].get("critic_ran", True),
+            "critic_approved": bool(br["_verdict"].get("approved")) and br["_verdict"].get("critic_ran", True),
+            "critic_notes": br["_verdict"].get("missing_citations", [])[:3],
+            "fallback": br["title"].startswith("[Automatic fallback]"), "drafted_by": br.get("_drafted_by", ""),
             "n_citations": len(br["citations"]), "cost_usd": b["cost_usd"], "latency_s": b["latency_s"],
         })
         print(json.dumps(rows[-1], ensure_ascii=False))
@@ -96,7 +98,9 @@ def run(provider: str = "mock", limit: int | None = None) -> dict:
 
     out = {"provider": provider, "models": get_router().names, "summary": summary, "rows": rows}
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
-    (ARTIFACTS_DIR / f"brief_eval_{provider}.json").write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
+    # A partial run is saved separately so it can never overwrite the full evaluation.
+    name = f"brief_eval_{provider}" + (f"_sample{n}" if limit else "")
+    (ARTIFACTS_DIR / f"{name}.json").write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
     return out
 
 

@@ -11,7 +11,7 @@ from functools import lru_cache
 from langgraph.types import Command
 from sqlalchemy import select
 
-from radar.config import LOCAL_STATE_DIR, settings
+from radar.config import settings
 from radar.db import create_all
 from radar.db.schema import briefs, events, tasks
 from radar.infra import get_db_engine
@@ -24,8 +24,9 @@ def _checkpointer():
         if settings.mode == "local":
             from langgraph.checkpoint.sqlite import SqliteSaver
 
-            LOCAL_STATE_DIR.mkdir(parents=True, exist_ok=True)
-            return SqliteSaver(sqlite3.connect(str(LOCAL_STATE_DIR / "checkpoints.sqlite"), check_same_thread=False))
+            state_dir = settings.local_sqlite_path.parent
+            state_dir.mkdir(parents=True, exist_ok=True)
+            return SqliteSaver(sqlite3.connect(str(state_dir / "checkpoints.sqlite"), check_same_thread=False))
         from langgraph.checkpoint.postgres import PostgresSaver
         from psycopg import Connection
 

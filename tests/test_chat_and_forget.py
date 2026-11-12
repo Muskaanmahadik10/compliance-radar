@@ -18,6 +18,18 @@ def test_pii_is_redacted_before_model_call():
     assert n == 2 and "jane.doe" not in text and "912" not in text and "PFAS" in text
 
 
+def test_citations_parse_despite_model_punctuation():
+    from radar.llm import CostLedger
+    from radar.retrieval import DocumentStore
+
+    hits = DocumentStore().search("sanctions screening of suppliers", k=3)
+    top = hits[0]
+    text = f"Freeze open orders【{top.doc_id.replace('-', chr(0x2011))} §{top.section.split(' ')[0]}】 and review [POL-FAKE-001 §9]."
+    res = chat._finish(text, hits, "q", 0, CostLedger())
+    assert [c["doc_id"] for c in res.citations] == [top.doc_id]
+    assert res.invalid_citations == ["POL-FAKE-001 §9"]
+
+
 def test_chat_answers_with_valid_citations_and_streams():
     res = chat.answer("What PFAS content must suppliers declare?")
     assert res.hits and res.hits[0]["doc_id"] == "POL-ENV-001"

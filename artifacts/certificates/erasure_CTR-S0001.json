@@ -1,18 +1,18 @@
 {
   "certificate_type": "document_erasure",
-  "doc_id": "POL-ENV-009",
-  "content_sha256": "4f7adae2af71b8cdbd12b0c98eff92bc345f80d1322323340c1f212be3174fb8",
+  "doc_id": "CTR-S0001",
+  "content_sha256": "ad33a9bee1e7612dcfa332943925ac7e879402bad2d8b3f0b5b66ab9ff1f1503",
   "requested_by": "dpo@company.example",
-  "reason": "test erasure",
-  "completed_at": "2026-11-12T09:42:20.847038+00:00",
-  "chunks_removed": 1,
+  "reason": "erasure request",
+  "completed_at": "2026-11-12T19:02:35.225271+00:00",
+  "chunks_removed": 8,
   "source_file_removed": true,
   "cache_entries_purged": 0,
-  "probes": 1,
+  "probes": 8,
   "retrieved_before": {
-    "dense": 1,
-    "sparse": 1,
-    "hybrid": 1
+    "dense": 2,
+    "sparse": 8,
+    "hybrid": 8
   },
   "retrieved_after": {
     "dense": 0,
@@ -20,13 +20,10 @@
     "hybrid": 0
   },
   "answers_citing_after": 0,
-  "briefs_citing_document": [
-    "BRF-5a4d6351",
-    "BRF-744c4b28"
-  ],
+  "briefs_citing_document": [],
   "models_in_use": {
-    "cheap": "mock",
-    "strong": "mock"
+    "cheap": "openai/gpt-oss-20b",
+    "strong": "openai/gpt-oss-120b"
   },
   "checks": {
     "baseline_document_was_retrievable": true,
@@ -37,5 +34,5 @@
   },
   "verified": true,
   "scope_note": "Retrieval-store erasure. No model in use was trained on this document; fine-tuned models would additionally require retraining or unlearning.",
-  "signature": "4699ce51e680e2b83754605f6c325728857c15194a44f55fc2a79189200991f1"
+  "signature": "035a49cffc2004f7419ca733a75f47d03d574b733d40c56da1734fe7d2c22aed"
 }

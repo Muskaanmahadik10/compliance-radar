@@ -34,7 +34,7 @@ EVIDENCE passages (cite as [DOC-ID §section]):
 {feedback}
 Write the impact brief.
 - 'summary': what changed, who is affected (use the counts), and what must happen first.
-- 'affected': at most 10 items. For suppliers, parts and products use the exact ids from the SYSTEM OF RECORD blocks; no citation is needed for them, but add the supplier's contract clause as a citation when it appears in the evidence. For contract clauses and policies use the document id as 'id' (for example CTR-S0010 or POL-ENV-001) and cite the section.
+- 'affected': at most 10 items. For suppliers, parts and products use the exact ids from the SYSTEM OF RECORD blocks; no citation is needed for them. A supply agreement binds only its own supplier: cite contract CTR-S0010 only for supplier S0010. If a supplier's own contract is not in the evidence, leave its citations empty. For contract clauses and policies use the document id as 'id' (for example CTR-S0010 or POL-ENV-001) and cite the section.
 - 'actions': concrete steps, each with an owner role and at least one EVIDENCE citation. 'deadline' is the time limit stated in the cited passage, written as in the text (for example "within 10 working days of publication", "within 30 days"); if the cited passage states none, write "not specified in policy". Never invent calendar dates.
 - A citation must point to the section that actually contains the statement (clause 2 for material declarations, clause 5 for export control, clause 6 for change notification). Write the section as it appears in the evidence, for example "4 Response to regulatory change".
 - 'citations': every document section you relied on, each with a short verbatim quote."""

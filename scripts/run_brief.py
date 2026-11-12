@@ -1,6 +1,9 @@
 """Run one brief for a topic's latest event and print it: python scripts/run_brief.py pfas"""
 
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # run from anywhere without installing the package
 
 from sqlalchemy import select
 

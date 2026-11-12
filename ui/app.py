@@ -110,21 +110,31 @@ with tab_briefs:
         k4.metric("Confidence", f"{br['confidence']:.0%}")
         k5.metric("Cost / time", f"${b['cost_usd']:.4f} / {b['latency_s']:.0f}s")
         st.write(br["summary"])
+        st.caption(f"Drafted by {br.get('_drafted_by', 'n/a')} · critic {br.get('_verdict', {}).get('critic_model') or 'n/a'} · {br.get('_n_evidence', 0)} evidence passages")
         if br.get("_auto_findings"):
             st.warning("Verifier: " + " · ".join(br["_auto_findings"]))
         v = br.get("_verdict", {})
-        (st.success if v.get("approved") else st.error)(f"Critic: {'approved' if v.get('approved') else 'not approved'}. {v.get('notes', '')}")
+        if v.get("critic_ran") is False:
+            st.info(f"Critic: not run. {v.get('notes', '')}")
+        else:
+            (st.success if v.get("approved") else st.error)(f"Critic: {'approved' if v.get('approved') else 'not approved'}. {v.get('notes', '')}")
+            for mc in v.get("missing_citations", []):
+                st.markdown(f"- {mc}")
         left, right = st.columns(2)
         with left:
             st.markdown("**Required actions**")
-            st.dataframe(pd.DataFrame([{"action": a["action"], "owner": a["owner_role"], "deadline": a["deadline"], "cites": ", ".join(f"{c['doc_id']} §{c['section']}" for c in a["citations"])} for a in br["actions"]]), hide_index=True, use_container_width=True)
+            for i, a in enumerate(br["actions"], 1):
+                cites = ", ".join(f"{c['doc_id']} §{c['section']}" for c in a["citations"]) or "no citation"
+                st.markdown(f"{i}. **{a['action']}**")
+                st.caption(f"Owner: {a['owner_role']} · Deadline: {a['deadline']} · Source: {cites}")
             if br.get("open_questions"):
                 st.markdown("**Open questions**")
                 for oq in br["open_questions"]:
                     st.markdown(f"- {oq}")
         with right:
             st.markdown("**Most affected**")
-            st.dataframe(pd.DataFrame([{"kind": a["kind"], "id": a["id"], "name": a["name"], "why": a["why"]} for a in br["affected"]]), hide_index=True, use_container_width=True)
+            for a in br["affected"]:
+                st.markdown(f"- `{a['kind']}` **{a['id']}** {a['name']}: {a['why']}")
         with st.expander(f"Evidence cited ({len(br['citations'])})"):
             for c in br["citations"]:
                 st.markdown(f"**{c['doc_id']} §{c['section']}**  \n> {c.get('quote', '')}")
@@ -164,7 +174,10 @@ with tab_chat:
                     box.markdown(text + "▌")
                 else:
                     final = ev
+            text = final.get("answer", text)  # normalised punctuation, so citations render uniformly
             box.markdown(text)
+            if final.get("citations"):
+                st.caption("Verified citations: " + ", ".join(f"{c['doc_id']} §{c['section']}" for c in final["citations"]))
             if final.get("invalid_citations"):
                 st.warning("Citations not found in the retrieved passages: " + ", ".join(final["invalid_citations"]))
             with st.expander(f"Sources ({len(sources)}) · cost ${final.get('cost', {}).get('cost_usd', 0):.5f} · PII redacted: {final.get('pii_redacted', 0)}"):

@@ -1,0 +1,74 @@
+{
+  "provider": "env",
+  "models": {
+    "cheap": "openai/gpt-oss-20b",
+    "strong": "openai/gpt-oss-120b"
+  },
+  "summary": {
+    "n": 3,
+    "impact_exact": 1.0,
+    "policy_cited": 1.0,
+    "grounded_first_try": 0.0,
+    "actions_cited": 1.0,
+    "critic_approved": 1.0,
+    "fallback_rate": 0.0,
+    "mean_cost_usd": 0.00281,
+    "p50_latency_s": 74.3
+  },
+  "rows": [
+    {
+      "topic": "pfas",
+      "title": "ECHA committees advance universal PFAS restriction: fluoropolymers and",
+      "impact_exact": true,
+      "suppliers_found": 54,
+      "suppliers_truth": 54,
+      "policy_cited": true,
+      "grounded_first_try": false,
+      "actions_cited": true,
+      "critic_ran": true,
+      "critic_approved": true,
+      "critic_notes": [],
+      "fallback": false,
+      "drafted_by": "openai/gpt-oss-120b",
+      "n_citations": 7,
+      "cost_usd": 0.002253,
+      "latency_s": 47.93
+    },
+    {
+      "topic": "rohs",
+      "title": "Commission Delegated Directive amending RoHS Annex III: exemption 7(a)",
+      "impact_exact": true,
+      "suppliers_found": 23,
+      "suppliers_truth": 23,
+      "policy_cited": true,
+      "grounded_first_try": false,
+      "actions_cited": true,
+      "critic_ran": true,
+      "critic_approved": true,
+      "critic_notes": [],
+      "fallback": false,
+      "drafted_by": "openai/gpt-oss-120b",
+      "n_citations": 8,
+      "cost_usd": 0.002338,
+      "latency_s": 74.3
+    },
+    {
+      "topic": "reach_svhc",
+      "title": "Candidate List updated with three new SVHCs including a brominated fla",
+      "impact_exact": true,
+      "suppliers_found": 18,
+      "suppliers_truth": 18,
+      "policy_cited": true,
+      "grounded_first_try": false,
+      "actions_cited": true,
+      "critic_ran": true,
+      "critic_approved": true,
+      "critic_notes": [],
+      "fallback": false,
+      "drafted_by": "openai/gpt-oss-20b",
+      "n_citations": 7,
+      "cost_usd": 0.003841,
+      "latency_s": 76.37
+    }
+  ]
+}

@@ -23,6 +23,12 @@ REWRITE = """Rewrite the question as one short search query for a corporate comp
 Question: {q}"""
 
 
+def _answer_model():
+    """Strong model for answers, falling back to the cheap one if the provider rejects the call (rate limit, outage)."""
+    r = get_router()
+    return r.strong if r.strong._llm_type == "mock" else r.strong.with_fallbacks([r.cheap])
+
+
 def redact_pii(text: str) -> tuple[str, int]:
     """Mask e-mail addresses and phone numbers before text leaves the process. Returns (text, number_redacted)."""
     n = len(_EMAIL.findall(text)) + len(_PHONE.findall(text))
@@ -63,7 +69,13 @@ def _prepare(question: str, history: list[dict], store: DocumentStore, ledger: C
     return messages, hits, search_q, n_pii
 
 
+def normalise(text: str) -> str:
+    """Models vary their punctuation: map lenticular brackets and non-breaking hyphens so citations parse uniformly."""
+    return text.replace("【", "[").replace("】", "]").replace("‑", "-").replace("‐", "-")
+
+
 def _finish(text: str, hits, search_q: str, n_pii: int, ledger: CostLedger) -> ChatResult:
+    text = normalise(text)
     valid = {(h.doc_id, h.section.split(" ")[0]): h for h in hits}
     cites, invalid = [], []
     for doc_id, section in dict.fromkeys(_CITE.findall(text)):
@@ -78,7 +90,7 @@ def _finish(text: str, hits, search_q: str, n_pii: int, ledger: CostLedger) -> C
 def answer(question: str, history: list[dict] | None = None, store: DocumentStore | None = None, k: int = 6, rewrite: bool = True) -> ChatResult:
     store, ledger = store or DocumentStore(), CostLedger()
     messages, hits, search_q, n_pii = _prepare(question, history or [], store, ledger, k, rewrite)
-    out = get_router().for_task("chat_answer").invoke(messages, config={"callbacks": [ledger]})
+    out = _answer_model().invoke(messages, config={"callbacks": [ledger]})
     return _finish(str(out.content), hits, search_q, n_pii, ledger)
 
 
@@ -88,10 +100,10 @@ def stream_answer(question: str, history: list[dict] | None = None, store: Docum
     messages, hits, search_q, n_pii = _prepare(question, history or [], store, ledger, k, rewrite)
     yield {"type": "sources", "search_query": search_q, "hits": [h.to_dict() for h in hits]}
     parts: list[str] = []
-    for chunk in get_router().for_task("chat_answer").stream(messages, config={"callbacks": [ledger]}):
+    for chunk in _answer_model().stream(messages, config={"callbacks": [ledger]}):
         tok = str(chunk.content)
         if tok:
             parts.append(tok)
             yield {"type": "token", "text": tok}
     res = _finish("".join(parts), hits, search_q, n_pii, ledger)
-    yield {"type": "done", "citations": res.citations, "invalid_citations": res.invalid_citations, "pii_redacted": res.pii_redacted, "cost": res.cost}
+    yield {"type": "done", "answer": res.answer, "citations": res.citations, "invalid_citations": res.invalid_citations, "pii_redacted": res.pii_redacted, "cost": res.cost}

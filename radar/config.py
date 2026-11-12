@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     cheap_model: str = "openai/gpt-oss-20b"
     strong_model: str = "openai/gpt-oss-120b"
     max_cost_per_brief_usd: float = 0.10
+    # Output budget per call. Prompt + this must fit the provider's per-request token limit (8k TPM on Groq's free tier).
+    max_output_tokens: int = 3000
 
     # observability
     langfuse_public_key: str = ""
