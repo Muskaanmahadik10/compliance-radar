@@ -1,0 +1,44 @@
+name: ci
+on: [push, pull_request]
+
+jobs:
+  local-mode:
+    name: tests (local mode, no services)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt
+      - run: ruff check .
+      - run: python -m pytest -q
+        env: { RADAR_MODE: local, RADAR_LLM_PROVIDER: mock }
+
+  compose-mode:
+    name: tests (real Qdrant, Redis, Postgres)
+    runs-on: ubuntu-latest
+    services:
+      qdrant:
+        image: qdrant/qdrant:v1.12.4
+        ports: ["6333:6333"]
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: radar, POSTGRES_PASSWORD: radar, POSTGRES_DB: radar }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U radar" --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q
+        env:
+          RADAR_MODE: compose
+          RADAR_LLM_PROVIDER: mock
+          RADAR_QDRANT_URL: http://localhost:6333
+          RADAR_REDIS_URL: redis://localhost:6379/0
+          RADAR_DATABASE_URL: postgresql+psycopg://radar:radar@localhost:5432/radar

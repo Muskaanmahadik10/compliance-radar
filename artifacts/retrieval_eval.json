@@ -1,0 +1,73 @@
+{
+  "k": 5,
+  "embedding_model": "BAAI/bge-small-en-v1.5",
+  "reranker_model": "Xenova/ms-marco-MiniLM-L-6-v2",
+  "direct": [
+    {
+      "config": "dense",
+      "n": 45,
+      "hit@1": 0.978,
+      "hit@5": 1.0,
+      "mrr": 0.983,
+      "p50_latency_ms": 10.1
+    },
+    {
+      "config": "sparse (BM25)",
+      "n": 45,
+      "hit@1": 0.956,
+      "hit@5": 0.978,
+      "mrr": 0.967,
+      "p50_latency_ms": 18.8
+    },
+    {
+      "config": "hybrid (RRF)",
+      "n": 45,
+      "hit@1": 1.0,
+      "hit@5": 1.0,
+      "mrr": 1.0,
+      "p50_latency_ms": 19.5
+    },
+    {
+      "config": "hybrid + rerank",
+      "n": 45,
+      "hit@1": 1.0,
+      "hit@5": 1.0,
+      "mrr": 1.0,
+      "p50_latency_ms": 411.6
+    }
+  ],
+  "paraphrased": [
+    {
+      "config": "dense",
+      "n": 25,
+      "hit@1": 0.64,
+      "hit@5": 0.76,
+      "mrr": 0.69,
+      "p50_latency_ms": 11.6
+    },
+    {
+      "config": "sparse (BM25)",
+      "n": 25,
+      "hit@1": 0.4,
+      "hit@5": 0.6,
+      "mrr": 0.466,
+      "p50_latency_ms": 16.1
+    },
+    {
+      "config": "hybrid (RRF)",
+      "n": 25,
+      "hit@1": 0.52,
+      "hit@5": 0.84,
+      "mrr": 0.653,
+      "p50_latency_ms": 17.2
+    },
+    {
+      "config": "hybrid + rerank",
+      "n": 25,
+      "hit@1": 0.76,
+      "hit@5": 0.84,
+      "mrr": 0.793,
+      "p50_latency_ms": 428.8
+    }
+  ]
+}
