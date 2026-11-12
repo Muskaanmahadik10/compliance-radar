@@ -125,8 +125,8 @@ def to_markdown(rows: list[dict]) -> str:
 
 if __name__ == "__main__":
     out = evaluate()
-    print("Direct questions (n=%d)" % out["direct"][0]["n"])
+    print(f"Direct questions (n={out['direct'][0]['n']})")
     print(to_markdown(out["direct"]))
     print()
-    print("Paraphrased questions (n=%d)" % out["paraphrased"][0]["n"])
+    print(f"Paraphrased questions (n={out['paraphrased'][0]['n']})")
     print(to_markdown(out["paraphrased"]))

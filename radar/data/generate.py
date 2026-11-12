@@ -156,7 +156,7 @@ def gen_documents(suppliers: list[Supplier], rng: random.Random) -> list[dict]:
                      "effective_date": f"202{rng.randint(3, 6)}-0{rng.randint(1, 9)}-01", "sections": sections})
     # More policies/SOPs: per-topic operational SOPs so retrieval has near-duplicates to rank
     sop_id = 101
-    for _, topic, title, _ in POLICY_TOPICS[:10]:
+    for _, topic, _title, _ in POLICY_TOPICS[:10]:
         docs.append({"doc_id": f"SOP-{sop_id}", "doc_type": "sop", "title": f"SOP: handling a regulatory change on {topic.value.replace('_', ' ')}", "topics": [topic.value], "jurisdiction": "GLOBAL", "supplier_id": None,
                      "effective_date": "2025-01-15", "sections": [
                          ("1 Trigger", f"A published or proposed change relating to {topic.value.replace('_', ' ')} is logged as an event."),

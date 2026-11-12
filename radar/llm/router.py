@@ -7,6 +7,7 @@ Every call's token usage is recorded through a LangChain callback so cost per br
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from functools import lru_cache
 
@@ -22,7 +23,7 @@ PRICES: dict[str, tuple[float, float]] = {
 }
 
 
-@dataclass
+@dataclass(eq=False)  # callbacks must be hashable; identity equality is what we want
 class CostLedger(BaseCallbackHandler):
     """LangChain callback: sums tokens and cost across every model call in a run."""
 
@@ -46,7 +47,10 @@ class CostLedger(BaseCallbackHandler):
                 self.output_tokens += o
                 self.cost_usd += cost
                 m = self.by_model.setdefault(model, {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0})
-                m["calls"] += 1; m["input_tokens"] += i; m["output_tokens"] += o; m["cost_usd"] += cost
+                m["calls"] += 1
+                m["input_tokens"] += i
+                m["output_tokens"] += o
+                m["cost_usd"] += cost
 
     def summary(self) -> dict:
         return {"calls": self.calls, "input_tokens": self.input_tokens, "output_tokens": self.output_tokens, "cost_usd": round(self.cost_usd, 6), "by_model": self.by_model}
@@ -64,7 +68,7 @@ def _make(model: str, temperature: float = 0.0) -> BaseChatModel:
     from langchain_openai import ChatOpenAI
 
     extra = {"reasoning_effort": "low"} if "gpt-oss" in model else {}
-    return ChatOpenAI(model=model, api_key=settings.llm_api_key, base_url=settings.llm_base_url, temperature=temperature, max_tokens=4000, max_retries=4, **extra)
+    return ChatOpenAI(model=model, api_key=settings.llm_api_key, base_url=settings.llm_base_url, temperature=temperature, max_tokens=6000, max_retries=4, **extra)
 
 
 @dataclass
@@ -80,6 +84,31 @@ class ModelRouter:
     @property
     def names(self) -> dict:
         return {"cheap": getattr(self.cheap, "model_name", None) or getattr(self.cheap, "model", "?"), "strong": getattr(self.strong, "model_name", None) or getattr(self.strong, "model", "?")}
+
+
+def structured(llm: BaseChatModel, schema):
+    """Structured output via tool/function calling, which every provider here supports. (Strict JSON-schema mode rejects
+    optional fields and free-form dicts on some OpenAI-compatible servers.)"""
+    if llm._llm_type == "mock":
+        return llm.with_structured_output(schema)
+    return llm.with_structured_output(schema, method="function_calling")
+
+
+def call_structured(llm: BaseChatModel, schema, messages: list, config: dict | None = None, attempts: int = 3):
+    """Invoke with structured output and retry. Hosted models occasionally answer in prose instead of calling the tool,
+    or emit arguments that fail validation; both are worth one or two more tries before giving up."""
+    runner = structured(llm, schema)
+    last: Exception | None = None
+    for i in range(attempts):
+        try:
+            out = runner.invoke(messages, config=config)
+            if out is not None:
+                return out
+            last = ValueError("model returned no structured output")
+        except Exception as e:  # provider 400s, validation errors, timeouts
+            last = e
+        time.sleep(1.5 * (i + 1))
+    raise RuntimeError(f"structured call failed after {attempts} attempts: {type(last).__name__}: {str(last)[:200]}")
 
 
 @lru_cache(maxsize=1)

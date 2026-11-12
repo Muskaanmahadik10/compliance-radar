@@ -101,28 +101,29 @@ class FeedEvent(BaseModel):
 
 
 class Citation(BaseModel):
-    doc_id: str
-    section: str
-    quote: str = Field(max_length=300)
+    doc_id: str = Field(description="Document id exactly as in the evidence, e.g. POL-ENV-001 or CTR-S0010")
+    section: str = Field(description="Section heading as in the evidence, e.g. '4 Response to regulatory change'")
+    quote: str = Field(default="", max_length=300, description="Short verbatim quote from that section")
 
 
 class AffectedItem(BaseModel):
     kind: Literal["supplier", "part", "product", "contract_clause", "policy"]
-    id: str
+    id: str = Field(description="Exact id: supplier_id (S0001), part_id (P00001), product_id (PSU-1200), or the document id for a contract clause or policy (CTR-S0010, POL-ENV-001)")
     name: str
-    why: str = Field(max_length=300)
+    why: str = Field(max_length=300, description="Why this item is affected by the event")
     citations: list[Citation] = []
 
 
 class RequiredAction(BaseModel):
     action: str
     owner_role: str
-    deadline: str
+    deadline: str = Field(description="Time limit as stated in the cited passage, or 'not specified in policy'. Never a made-up calendar date.")
     citations: list[Citation] = []
 
 
-class ImpactBrief(BaseModel):
-    event_id: str
+class BriefDraft(BaseModel):
+    """What the model writes. Deliberately contains no ids or numbers the pipeline owns."""
+
     title: str
     summary: str = Field(max_length=1200)
     topic: Topic
@@ -132,4 +133,22 @@ class ImpactBrief(BaseModel):
     confidence: float = Field(ge=0, le=1)
     open_questions: list[str] = []
     citations: list[Citation]
+
+
+class ImpactBrief(BriefDraft):
+    """The stored brief: the model's draft plus fields only the pipeline may set."""
+
+    event_id: str
     requires_approval: bool = True
+    # Totals from SQL behind the "top items" the model chose to describe; never written by the model.
+    affected_counts: dict[str, int] = {}
+
+
+class SubQuestions(BaseModel):
+    sub_questions: list[str] = Field(min_length=1, max_length=5)
+
+
+class CriticVerdict(BaseModel):
+    approved: bool
+    missing_citations: list[str] = []
+    notes: str = ""

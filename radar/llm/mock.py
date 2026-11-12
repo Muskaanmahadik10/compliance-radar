@@ -60,8 +60,9 @@ class _StructuredMock:
     def invoke(self, messages, config=None, **kwargs):
         text = "\n".join(str(getattr(m, "content", m)) for m in (messages if isinstance(messages, list) else [messages]))
         name = self.schema.__name__
-        if name == "ImpactBrief":
-            return self._brief(text)
+        if name in ("ImpactBrief", "BriefDraft"):
+            full = self._brief(text)
+            return full if name == "ImpactBrief" else self.schema(**{k: v for k, v in full.model_dump().items() if k in self.schema.model_fields})
         if name == "CriticVerdict":
             return self.schema(approved=True, missing_citations=[], notes="mock critic: all claims carry citations")
         if name == "SubQuestions":
@@ -75,7 +76,7 @@ class _StructuredMock:
         title = re.search(r'"title":\s*"([^"]+)"', text)
         topic = re.search(r'"topic":\s*"([^"]+)"', text)
         juris = re.search(r'"jurisdiction":\s*"([^"]+)"', text)
-        cites = [Citation(doc_id=d, section=s.strip(), quote="") for d, s in dict.fromkeys(re.findall(r"\[([A-Z]+-[A-Z0-9-]+) §([^\]]+)\]", text))][:8]
+        cites = [Citation(doc_id=d, section=s.strip(), quote="") for d, s in dict.fromkeys(re.findall(r"\[([A-Z]+-[A-Z0-9-]+) §([^\]]+)\]", text)) if d != "DOC-ID"][:8]
         suppliers = [(sid, nm) for sid, nm in dict.fromkeys(re.findall(r'"supplier_id":\s*"(S\d{4})",\s*"name":\s*"([^"]+)"', text))][:6]
         parts = list(dict.fromkeys(re.findall(r'"part_id":\s*"(P\d{5})"', text)))[:6]
         affected = [AffectedItem(kind="supplier", id=sid, name=nm, why="supplies parts containing an affected material", citations=cites[:1]) for sid, nm in suppliers]
