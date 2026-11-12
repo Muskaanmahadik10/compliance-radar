@@ -54,13 +54,22 @@ def main(per_topic: int, batch: int = 30) -> None:
     test_titles = {json.loads(ln)["title"].lower() for ln in (DATA_DIR / "fixtures" / "classifier_test.jsonl").read_text(encoding="utf-8").splitlines() if ln.strip()}
     out_dir = DATA_DIR / "classifier"
     out_dir.mkdir(parents=True, exist_ok=True)
+    # Resumable: keep what an earlier run produced and only top up topics that are short.
+    existing: dict[str, list[str]] = {}
+    train_path = out_dir / "train.jsonl"
+    if train_path.exists():
+        for ln in train_path.read_text(encoding="utf-8").splitlines():
+            if ln.strip():
+                r = json.loads(ln)
+                existing.setdefault(r["topic"], []).append(r["title"])
     rows: list[dict] = []
     for topic, desc in DESCRIPTIONS.items():
-        seen: set[str] = set()
+        seen: set[str] = set(existing.get(topic.value, []))
+        stalls = 0  # consecutive calls that added nothing new
         while len(seen) < per_topic:
             avoid = f"Avoid these angles already covered: {'; '.join(list(seen)[-8:])}" if seen else ""
             try:
-                res = call_structured(router.strong, Headlines, [("human", PROMPT.format(n=min(batch, per_topic - len(seen) + 5), desc=desc, avoid=avoid))], config={"callbacks": [ledger]})
+                res = call_structured(router.strong, Headlines, [("human", PROMPT.format(n=min(batch, per_topic - len(seen) + 5), desc=desc, avoid=avoid))], config={"callbacks": [ledger]}, fallback=router.cheap)
             except Exception as e:
                 print(f"{topic.value}: generation failed ({e}); keeping {len(seen)}")
                 break
@@ -69,7 +78,8 @@ def main(per_topic: int, batch: int = 30) -> None:
                 h = " ".join(h.split())
                 if 20 <= len(h) <= 220 and h.lower() not in test_titles:
                     seen.add(h)
-            if len(seen) == before:
+            stalls = stalls + 1 if len(seen) == before else 0
+            if stalls >= 2:
                 break
         rows += [{"title": h, "topic": topic.value} for h in list(seen)[:per_topic]]
         print(f"{topic.value}: {min(len(seen), per_topic)} headlines")
