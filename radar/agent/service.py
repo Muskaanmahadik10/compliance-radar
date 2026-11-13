@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import uuid
 from functools import lru_cache
@@ -16,27 +17,42 @@ from radar.db import create_all
 from radar.db.schema import briefs, events, tasks
 from radar.infra import get_db_engine
 
+log = logging.getLogger(__name__)
+_KIND = {"value": "not initialised"}
+
+
+def checkpointer_kind() -> str:
+    """'sqlite', 'postgres', or 'memory (NOT durable: ...)'. Stored on every brief and shown in /health."""
+    return _KIND["value"]
+
 
 @lru_cache(maxsize=1)
 def _checkpointer():
-    """Durable checkpoints: SQLite file locally, Postgres in compose mode, memory as the last resort."""
+    """Durable checkpoints: SQLite file locally, Postgres in compose mode. If neither can be opened the graph still runs
+    on an in-memory saver, but that is logged and recorded on each brief: a pending review then cannot be resumed after
+    a restart."""
     try:
         if settings.mode == "local":
             from langgraph.checkpoint.sqlite import SqliteSaver
 
             state_dir = settings.local_sqlite_path.parent
             state_dir.mkdir(parents=True, exist_ok=True)
-            return SqliteSaver(sqlite3.connect(str(state_dir / "checkpoints.sqlite"), check_same_thread=False))
+            saver = SqliteSaver(sqlite3.connect(str(state_dir / "checkpoints.sqlite"), check_same_thread=False))
+            _KIND["value"] = "sqlite"
+            return saver
         from langgraph.checkpoint.postgres import PostgresSaver
         from psycopg import Connection
 
         conn = Connection.connect(settings.database_url.replace("postgresql+psycopg://", "postgresql://"), autocommit=True)
         saver = PostgresSaver(conn)
         saver.setup()
+        _KIND["value"] = "postgres"
         return saver
-    except Exception:
+    except Exception as e:
         from langgraph.checkpoint.memory import MemorySaver
 
+        log.warning("durable checkpointer unavailable (%s: %s); using memory, pending reviews will not survive a restart", type(e).__name__, str(e)[:160])
+        _KIND["value"] = f"memory (NOT durable: {type(e).__name__})"
         return MemorySaver()
 
 

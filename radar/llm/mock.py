@@ -83,11 +83,15 @@ class _StructuredMock:
         parts = list(dict.fromkeys(re.findall(r'"part_id":\s*"(P\d{5})"', text)))[:6]
         affected = [AffectedItem(kind="supplier", id=sid, name=nm, why="supplies parts containing an affected material", citations=cites[:1]) for sid, nm in suppliers]
         affected += [AffectedItem(kind="part", id=p, name=p, why="contains an affected material", citations=cites[:1]) for p in parts]
+        totals = re.search(r"authoritative totals\):\s*(\{[^}]*\})", text)
+        counts = json.loads(totals.group(1)) if totals else {}
         t = topic.group(1) if topic and topic.group(1) in {x.value for x in Topic} else "other"
         j = juris.group(1) if juris and juris.group(1) in {x.value for x in Jurisdiction} else "GLOBAL"
         return ImpactBrief(
             event_id=ev.group(1) if ev else "unknown", title=title.group(1)[:200] if title else "Impact brief", topic=Topic(t), jurisdiction=Jurisdiction(j),
-            summary=f"Regulatory change on {t.replace('_', ' ')} affects {len(suppliers)} suppliers and {len(parts)} parts per the cited policy and contract clauses. Mock summary.",
+            # Totals come from the SYSTEM OF RECORD block (the full SQL counts), never from the length of the capped top-8 lists.
+            summary=(f"Regulatory change on {t.replace('_', ' ')} affects {counts['suppliers']} suppliers and {counts['parts']} parts per the cited policy and contract clauses. Mock summary."
+                     if {"suppliers", "parts"} <= counts.keys() else f"Regulatory change on {t.replace('_', ' ')}; see the impact counts. Mock summary."),
             affected=affected or [AffectedItem(kind="policy", id=cites[0].doc_id if cites else "POL-GOV-012", name="policy", why="governs response", citations=cites[:1])],
             actions=[RequiredAction(action="Request updated supplier declarations", owner_role="Procurement", deadline="30 days", citations=cites[:1]),
                      RequiredAction(action="Screen parts list and update substitute register", owner_role="Compliance", deadline="10 working days", citations=cites[1:2] or cites[:1])],

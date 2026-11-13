@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     cheap_model: str = "openai/gpt-oss-20b"
     strong_model: str = "openai/gpt-oss-120b"
+    # Estimated-cost budget per brief (CostLedger prices; unknown models count as $0). Once spent, the remaining model
+    # steps are skipped and the brief is staged with the SQL impact and evidence for manual review. <= 0 disables it.
     max_cost_per_brief_usd: float = 0.10
     # Output budget per call. Prompt + this must fit the provider's per-request token limit (8k TPM on Groq's free tier).
     max_output_tokens: int = 3000
@@ -62,6 +64,10 @@ class Settings(BaseSettings):
     classifier_model: str = ""
     classifier_lora_min_confidence: float = 0.8
     allowed_fetch_domains: list[str] = ["eur-lex.europa.eu", "www.federalregister.gov", "www.moea.gov.tw", "www.bsmi.gov.tw"]
+
+    # Erasure certificates are HMAC-signed with this key. Empty = a public demo key, and certificates say so
+    # ("signature_key_id": "demo-public"): such a signature shows integrity against accidents, not authenticity.
+    signing_key: str = ""
 
     data_dir: Path = DATA_DIR
     artifacts_dir: Path = ARTIFACTS_DIR

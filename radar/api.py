@@ -2,6 +2,7 @@
 
   GET  /health                         infrastructure status
   POST /ingest/poll                    publish feed items to the stream (replay fixture and/or live feeds) and process them
+                                       (user-triggered: there is no scheduled poller)
   GET  /events                         classified events (newest first)
   POST /briefs                         start the brief pipeline for an event; returns when it is waiting for review
   GET  /briefs, /briefs/{id}           list / read briefs
@@ -9,8 +10,10 @@
   POST /chat                           server-sent events: sources, tokens, final citations and cost
   GET  /search                         hybrid search (debugging and demos)
   GET  /documents                      knowledge-base documents
-  DELETE /documents/{id}               verified erasure; returns the signed certificate
+  DELETE /documents/{id}               retrieval erasure with recorded checks and a tombstone; returns the certificate
   GET  /metrics                        evaluation results and running totals
+
+No authentication: reviewer and requester names are plain request fields. Run it only on a trusted local machine.
 
 Run: uvicorn radar.api:app --reload
 """
@@ -33,6 +36,7 @@ from radar.db.schema import briefs, documents, events
 from radar.forget import forget_document
 from radar.infra import get_db_engine, health
 from radar.ingest import feeds, worker
+from radar.ingest.classify import active_tiers
 from radar.llm import get_router
 from radar.retrieval import DocumentStore
 
@@ -50,7 +54,7 @@ class BriefIn(BaseModel):
 
 class DecisionIn(BaseModel):
     approve: bool
-    by: str = Field(min_length=2)
+    by: str = Field(min_length=2, max_length=64)
     comment: str = ""
 
 
@@ -61,7 +65,7 @@ class ChatIn(BaseModel):
 
 
 class ForgetIn(BaseModel):
-    requested_by: str = Field(min_length=2)
+    requested_by: str = Field(min_length=2, max_length=64)
     reason: str = "erasure request"
 
 
@@ -72,7 +76,12 @@ def _startup() -> None:
 
 @app.get("/health")
 def get_health():
-    return health() | {"version": __version__, "llm_provider": settings.llm_provider, "models": get_router().names}
+    try:
+        models = get_router().names
+    except Exception as e:  # e.g. a real provider selected without its key: report it instead of failing silently
+        models = {"error": str(e)}
+    return health() | {"version": __version__, "llm_provider": settings.llm_provider, "models": models, "classifier_tiers": active_tiers(),
+                       "signing_key": "configured" if settings.signing_key else "demo (public default)"}
 
 
 @app.post("/ingest/poll")
@@ -152,10 +161,8 @@ def delete_document(doc_id: str, body: ForgetIn):
 @app.get("/metrics")
 def metrics():
     out: dict = {}
-    for name in ("retrieval_eval", "brief_eval_mock", "brief_eval_env", "classifier_eval"):
-        p = ARTIFACTS_DIR / f"{name}.json"
-        if p.exists():
-            out[name] = json.loads(p.read_text(encoding="utf-8"))
+    for p in sorted(ARTIFACTS_DIR.glob("*_eval*.json")):  # current results only; superseded ones live in a subfolder
+        out[p.stem] = json.loads(p.read_text(encoding="utf-8"))
     with get_db_engine().connect() as c:
         out["totals"] = {
             "events": c.execute(select(func.count()).select_from(events)).scalar(),

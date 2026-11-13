@@ -9,7 +9,7 @@ def indexed():
     from radar.data.build import build_all
     from radar.retrieval.ingest import ingest
 
-    build_all()
+    build_all(reset_erasures=True)  # explicit demo reset: tombstones from other test modules are cleared
     ingest(recreate=True)
 
 

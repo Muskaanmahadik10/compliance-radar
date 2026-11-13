@@ -1,13 +1,19 @@
 """Brief evaluation on the 11 relevant fixture events, against ground truth written by hand below (independent of the
 pipeline's own triage code).
 
-Metrics per brief:
-  impact_exact        supplier count equals the hand-specified truth (materials x country) computed from the supplier master
-  policy_cited        the policy that governs the topic is among the citations
-  grounded_first_try  the verifier had to remove nothing (no invented ids, no citations outside the evidence)
-  actions_cited       every action carries at least one valid citation after verification
-  critic_approved     the LLM critic approved (possibly after one revision)
-plus cost and latency. Usage: python -m evaluation.briefs [--provider mock|env]
+Metrics per brief (each is exactly this check, nothing more):
+  impact_ids_exact    the brief's full supplier id set equals the hand-specified truth set (materials x country, from the
+                      supplier master). Equal-size but different sets fail.
+  policy_cited        the policy that governs the topic is among the citations (presence, not whether it supports a claim)
+  grounded_first_try  on the FIRST draft the verifier removed nothing: no invented supplier/part/product id, no citation
+                      outside the evidence, at any level (brief, affected item, action). Read from the per-attempt record.
+  structural_ok       the final brief passes the structural checks (every action cited, a valid citation, summary totals
+                      equal to SQL)
+  actions_cited       every action carries at least one valid citation after verification (presence, not entailment)
+  critic_approved     the LLM critic's own verdict on the final draft (None if the critic did not run)
+plus cost and latency. Deadlines, obligation direction and whether quotes are verbatim are not scored.
+The summary reports how many truth events exist, how many the classifier passed on as relevant, and how many were run.
+Usage: python -m evaluation.briefs [--provider mock|env] [--limit N]   (--limit takes the first N matching events)
 """
 
 from __future__ import annotations
@@ -15,6 +21,9 @@ from __future__ import annotations
 import argparse
 import json
 import statistics
+import subprocess
+from collections import Counter
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 
@@ -40,17 +49,24 @@ TRUTH: dict[str, tuple[list[str], str | None, str]] = {
 }
 
 
-def _truth_suppliers(materials: list[str], country: str | None) -> int:
+def _truth_suppliers(materials: list[str], country: str | None) -> set[str]:
     sup = json.loads((DATA_DIR / "generated" / "suppliers.json").read_text(encoding="utf-8"))
-    return sum(1 for s in sup if set(s["materials"]) & set(materials) and (country is None or s["country"] == country))
+    return {s["supplier_id"] for s in sup if set(s["materials"]) & set(materials) and (country is None or s["country"] == country)}
+
+
+def _commit() -> str:
+    try:
+        return subprocess.run(["git", "describe", "--always", "--dirty", "--abbrev=7"], capture_output=True, text=True, check=True).stdout.strip()
+    except Exception:
+        return "unknown"
 
 
 def prepare() -> list[dict]:
-    """Fresh company, index and classified events so the run is reproducible."""
+    """Fresh company (erasure tombstones cleared), index and classified events so the run is reproducible."""
     from radar.data.build import build_all
     from radar.retrieval.ingest import ingest
 
-    build_all()
+    build_all(reset_erasures=True)
     ingest(recreate=True)
     r = get_redis()
     r.delete(RAW_STREAM, CLASSIFIED_STREAM)
@@ -65,38 +81,52 @@ def prepare() -> list[dict]:
 def run(provider: str = "mock", limit: int | None = None) -> dict:
     from radar.agent import start_brief
 
-    evs = [e for e in prepare() if e["url"] in TRUTH][: limit or None]
+    relevant = [e for e in prepare() if e["url"] in TRUTH]
+    evs = relevant[: limit or None]
     rows = []
     for e in evs:
         mats, country, policy = TRUTH[e["url"]]
         b = start_brief(e["event_id"])
         br = b["brief"]
-        removed = [f for f in br.get("_auto_findings", []) if "removed" in f]
+        v = br["_verdict"]
+        attempts = br.get("_attempts") or []
+        truth_ids = _truth_suppliers(mats, country)
+        found_ids = set((br.get("_impact") or {}).get("supplier_ids", []))
         rows.append({
             "topic": e["topic"], "title": e["title"][:70],
-            "impact_exact": br["affected_counts"]["suppliers"] == _truth_suppliers(mats, country),
-            "suppliers_found": br["affected_counts"]["suppliers"], "suppliers_truth": _truth_suppliers(mats, country),
+            "impact_ids_exact": found_ids == truth_ids,
+            "suppliers_found": len(found_ids), "suppliers_truth": len(truth_ids),
             "policy_cited": any(c["doc_id"] == policy for c in br["citations"]),
-            "grounded_first_try": not removed,
+            "grounded_first_try": bool(attempts) and attempts[0]["removed"] == 0,
+            "first_try_removals": attempts[0]["removed"] if attempts else None, "first_try_codes": attempts[0]["codes"] if attempts else None,
+            "n_attempts": len(attempts),
+            "structural_ok": bool(v.get("structural_ok")),
             "actions_cited": bool(br["actions"]) and all(a["citations"] for a in br["actions"]),
-            "critic_ran": br["_verdict"].get("critic_ran", True),
-            "critic_approved": bool(br["_verdict"].get("approved")) and br["_verdict"].get("critic_ran", True),
-            "critic_notes": br["_verdict"].get("missing_citations", [])[:3],
+            "critic_ran": v.get("critic_ran", False),
+            "critic_approved": v.get("critic_approved") if v.get("critic_ran") else None,
+            "critic_notes": v.get("missing_citations", [])[:3],
+            "final_findings": br.get("_auto_findings", [])[:6],
             "fallback": br["title"].startswith("[Automatic fallback]"), "drafted_by": br.get("_drafted_by", ""),
             "n_citations": len(br["citations"]), "cost_usd": b["cost_usd"], "latency_s": b["latency_s"],
         })
         print(json.dumps(rows[-1], ensure_ascii=False))
     n = len(rows)
 
-    def rate(k: str) -> float:
-        return round(sum(bool(r[k]) for r in rows) / n, 3)
+    def rate(k: str) -> float | None:
+        vals = [r[k] for r in rows if r[k] is not None]
+        return round(sum(bool(x) for x in vals) / len(vals), 3) if vals else None
 
-    summary = {"n": n, "impact_exact": rate("impact_exact"), "policy_cited": rate("policy_cited"), "grounded_first_try": rate("grounded_first_try"),
-               "actions_cited": rate("actions_cited"), "critic_approved": rate("critic_approved"), "fallback_rate": rate("fallback"),
-               "mean_cost_usd": round(statistics.mean(r["cost_usd"] for r in rows), 5), "p50_latency_s": round(statistics.median(r["latency_s"] for r in rows), 1)}
+    summary = {"truth_events": len(TRUTH), "classified_relevant": len(relevant), "evaluated": n,
+               "classified_by": dict(Counter((e.get("raw") or {}).get("classifier", "?") for e in relevant)),
+               "sample": f"first {limit} matching events (not random)" if limit else "all matching events",
+               "impact_ids_exact": rate("impact_ids_exact"), "policy_cited": rate("policy_cited"), "grounded_first_try": rate("grounded_first_try"),
+               "structural_ok": rate("structural_ok"), "actions_cited": rate("actions_cited"), "critic_ran": rate("critic_ran"), "critic_approved": rate("critic_approved"),
+               "fallback_rate": rate("fallback"),
+               "mean_cost_usd_estimated": round(statistics.mean(r["cost_usd"] for r in rows), 5), "p50_latency_s": round(statistics.median(r["latency_s"] for r in rows), 1)}
     from radar.llm import get_router
 
-    out = {"provider": provider, "models": get_router().names, "summary": summary, "rows": rows}
+    out = {"provider": provider, "models": get_router().names, "commit": _commit(), "run_at": datetime.now(UTC).isoformat(timespec="seconds"),
+           "summary": summary, "rows": rows}
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     # A partial run is saved separately so it can never overwrite the full evaluation.
     name = f"brief_eval_{provider}" + (f"_sample{n}" if limit else "")

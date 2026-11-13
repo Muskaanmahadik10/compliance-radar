@@ -22,7 +22,7 @@ Event:
 SYSTEM OF RECORD - impact counts (authoritative totals):
 {counts}
 
-SYSTEM OF RECORD - highest-priority affected suppliers (ranked by tier, risk flags, audit score; the full list is attached to the brief automatically):
+SYSTEM OF RECORD - highest-priority affected suppliers (ranked by tier, risk flags, audit score; the full id list is stored with the brief automatically):
 {suppliers}
 
 SYSTEM OF RECORD - affected parts and the products that use them:
@@ -54,7 +54,7 @@ EVIDENCE passages that were available to the drafter:
 Automatic checks found: {auto_findings}
 
 How to judge:
-- Supplier ids, part ids, product ids and counts come from the company's system of record. They are verified automatically and need no citation. Do not flag supplier, part or product entries for missing citations.
+- Supplier ids, part ids and product ids come from the company's system of record; they are checked automatically against the SQL result and need no citation. The authoritative totals are in the draft's `sql_totals`; flag any number in the summary that contradicts them. Do not flag supplier, part or product entries for missing citations.
 - Facts about the event itself (what changed, where, when) are supported by the Event block above.
 - A deadline of "not specified in policy" is acceptable.
 - Flag an action, or a statement about what a policy or contract requires, only if: (a) it has no citation; (b) the cited passage does not say what the draft claims, including who owes the duty to whom; (c) a stated time limit differs from the cited text; or (d) a contract of one supplier is used as if it bound a different supplier.

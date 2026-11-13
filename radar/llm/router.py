@@ -2,7 +2,8 @@
 
 Tiers: 'cheap' (classification, decomposition, tool choice) and 'strong' (drafting, critique). Providers: mock, any
 OpenAI-compatible endpoint (Groq, OpenAI, Ollama, vLLM) via langchain-openai, or Anthropic via langchain-anthropic.
-Every call's token usage is recorded through a LangChain callback so cost per brief is a real number, not a guess.
+Every call's reported token usage is recorded through a LangChain callback and priced from the table below. That is an
+estimate, not a bill: a model missing from PRICES, or a response without usage data, is counted as $0.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from functools import lru_cache
+from urllib.parse import urlparse
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -57,19 +59,36 @@ class CostLedger(BaseCallbackHandler):
         return {"calls": self.calls, "input_tokens": self.input_tokens, "output_tokens": self.output_tokens, "cost_usd": round(self.cost_usd, 6), "by_model": self.by_model}
 
 
+class MissingCredentials(RuntimeError):
+    """A real provider was selected but its key is missing. Raised instead of quietly substituting the mock model."""
+
+
+def _is_local_endpoint(url: str) -> bool:
+    host = (urlparse(url).hostname or "").lower()
+    return host in {"localhost", "127.0.0.1", "::1", "host.docker.internal"} or host.endswith(".localhost")
+
+
 def _make(model: str, temperature: float = 0.0) -> BaseChatModel:
-    if settings.llm_provider == "mock" or (settings.llm_provider == "openai_compatible" and not settings.llm_api_key) or (settings.llm_provider == "anthropic" and not settings.anthropic_api_key):
+    """Build one chat model. The mock is used only when RADAR_LLM_PROVIDER=mock was chosen explicitly."""
+    if settings.llm_provider == "mock":
         from radar.llm.mock import MockChatModel
 
         return MockChatModel(model_name="mock")
     if settings.llm_provider == "anthropic":
+        if not settings.anthropic_api_key:
+            raise MissingCredentials("RADAR_LLM_PROVIDER=anthropic but RADAR_ANTHROPIC_API_KEY is empty. Set the key, or set RADAR_LLM_PROVIDER=mock for offline mode.")
         from langchain_anthropic import ChatAnthropic
 
         return ChatAnthropic(model=model, api_key=settings.anthropic_api_key, temperature=temperature, max_tokens=settings.max_output_tokens)
+    key = settings.llm_api_key
+    if not key:
+        if not _is_local_endpoint(settings.llm_base_url):
+            raise MissingCredentials("RADAR_LLM_PROVIDER=openai_compatible but RADAR_LLM_API_KEY is empty. Set the key, or set RADAR_LLM_PROVIDER=mock for offline mode.")
+        key = "not-needed"  # a keyless local server (Ollama, vLLM) is a legitimate real backend
     from langchain_openai import ChatOpenAI
 
     extra = {"reasoning_effort": "low"} if "gpt-oss" in model else {}
-    return ChatOpenAI(model=model, api_key=settings.llm_api_key, base_url=settings.llm_base_url, temperature=temperature, max_tokens=settings.max_output_tokens, max_retries=2, **extra)
+    return ChatOpenAI(model=model, api_key=key, base_url=settings.llm_base_url, temperature=temperature, max_tokens=settings.max_output_tokens, max_retries=2, **extra)
 
 
 @dataclass

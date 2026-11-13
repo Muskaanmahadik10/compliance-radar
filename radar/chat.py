@@ -1,5 +1,6 @@
 """Question answering over the company knowledge base: optional query rewriting, hybrid retrieval with reranking,
-streamed answers with citations, a grounding check on the citations, and PII redaction before any external model call.
+streamed answers with citations, a citation-id check, and e-mail/phone masking (radar/privacy.py) applied to the
+question, the history and every retrieved passage before they are sent to a model.
 """
 
 from __future__ import annotations
@@ -12,11 +13,10 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from radar.agent.prompts import CHAT, SYSTEM
 from radar.llm import CostLedger, get_router
+from radar.privacy import redact_pii
 from radar.retrieval import DocumentStore
 from radar.tools.registry import _INJ
 
-_EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
-_PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d\s().-]{8,}\d)(?!\w)")
 _CITE = re.compile(r"\[([A-Z]+-[A-Z0-9-]+) §([^\]]+)\]")
 
 REWRITE = """Rewrite the question as one short search query for a corporate compliance knowledge base. Replace everyday words with the standard terms a policy would use (for example PFAS, RoHS, REACH SVHC, CMRT, RMAP smelter, RBA audit, Entity List, ECCN, SBOM, material declaration). Reply with the query only.
@@ -27,12 +27,6 @@ def _answer_model():
     """Strong model for answers, falling back to the cheap one if the provider rejects the call (rate limit, outage)."""
     r = get_router()
     return r.strong if r.strong._llm_type == "mock" else r.strong.with_fallbacks([r.cheap])
-
-
-def redact_pii(text: str) -> tuple[str, int]:
-    """Mask e-mail addresses and phone numbers before text leaves the process. Returns (text, number_redacted)."""
-    n = len(_EMAIL.findall(text)) + len(_PHONE.findall(text))
-    return _PHONE.sub("[phone]", _EMAIL.sub("[email]", text)), n
 
 
 def rewrite_query(question: str, ledger: CostLedger | None = None) -> str:
@@ -63,8 +57,18 @@ def _prepare(question: str, history: list[dict], store: DocumentStore, ledger: C
     safe_q, n_pii = redact_pii(question)
     search_q = rewrite_query(safe_q, ledger) if rewrite else safe_q
     hits = store.search(f"{search_q} {safe_q}" if search_q != safe_q else safe_q, k=k)
-    evidence = "\n".join(f"[{h.citation}] {_INJ.sub('[REDACTED instruction-like text]', h.text)}" for h in hits) or "(nothing retrieved)"
-    hist = "\n".join(f"{m['role']}: {redact_pii(m['content'])[0]}" for m in history[-6:]) or "(none)"
+    lines = []
+    for h in hits:  # retrieved passages are provider-bound too, so they get the same masking as the question
+        body, n = redact_pii(_INJ.sub("[REDACTED instruction-like text]", h.text))
+        n_pii += n
+        lines.append(f"[{h.citation}] {body}")
+    evidence = "\n".join(lines) or "(nothing retrieved)"
+    hist_lines = []
+    for m in history[-6:]:
+        body, n = redact_pii(str(m.get("content", "")))
+        n_pii += n
+        hist_lines.append(f"{m.get('role', 'user')}: {body}")
+    hist = "\n".join(hist_lines) or "(none)"
     messages = [SystemMessage(SYSTEM), HumanMessage(CHAT.format(evidence=evidence, history=hist, question=safe_q))]
     return messages, hits, search_q, n_pii
 

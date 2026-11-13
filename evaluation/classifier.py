@@ -16,7 +16,7 @@ from collections import Counter
 
 from radar.config import ARTIFACTS_DIR, DATA_DIR, settings
 from radar.data.schemas import Topic
-from radar.ingest.classify import classify, classify_rules
+from radar.ingest.classify import classify, classify_rules, llm_callback
 from radar.llm import CostLedger, get_router
 
 
@@ -67,9 +67,7 @@ def run() -> dict:
     if router.cheap._llm_type != "mock":
         def run_chain(name: str, use_lora):
             ledger = CostLedger()
-
-            def llm(prompt: str) -> str:
-                return str(router.cheap.invoke(prompt, config={"callbacks": [ledger]}).content)
+            llm = llm_callback(router, callbacks=[ledger])  # the same callable the live worker uses
 
             # _Off() disables the tier explicitly (passing None would auto-load a configured adapter)
             out = [classify(t, llm=llm, lora=use_lora if use_lora is not None else _Off()) for t in titles]

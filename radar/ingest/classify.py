@@ -83,6 +83,44 @@ def classify_rules(title: str, summary: str = "") -> Classification:
     return Classification(topic, juris, urgency, detect_language(title + " " + summary), conf, "rules")
 
 
+def llm_callback(router=None, callbacks: list | None = None):
+    """The LLM tier as a callable(prompt) -> str, built from the cheap model of the router.
+
+    This is the one place the third tier is constructed: the stream worker, the API, the UI and evaluation/classifier.py
+    all get it from here. Returns None when the router is the offline mock, so a deterministic stand-in is never
+    presented as a live LLM classification (offline runs use rules, plus LoRA if configured).
+    """
+    if router is None:
+        from radar.llm import get_router
+
+        router = get_router()
+    model = router.cheap
+    if getattr(model, "_llm_type", "") == "mock":
+        return None
+    cfg = {"callbacks": list(callbacks or [])}
+
+    def _call(prompt: str) -> str:
+        return str(model.invoke(prompt, config=cfg).content)
+
+    _call.model_name = getattr(model, "model_name", None) or getattr(model, "model", "?")  # type: ignore[attr-defined]
+    return _call
+
+
+def active_tiers() -> list[str]:
+    """Which tiers live ingestion would use right now (shown by /health)."""
+    from radar.ingest import lora_classifier
+
+    tiers = ["rules"]
+    if lora_classifier.get() is not None:
+        tiers.append("lora")
+    try:
+        if llm_callback() is not None:
+            tiers.append("llm")
+    except Exception:
+        pass
+    return tiers
+
+
 def classify(title: str, summary: str = "", llm=None, lora=None, lora_min_confidence: float | None = None) -> Classification:
     """Tiered classification, cheapest first:
 

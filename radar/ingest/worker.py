@@ -1,7 +1,13 @@
 """Stream worker: consumes `events:raw` with a consumer group, deduplicates (exact id + MinHash near-duplicate on title),
-classifies, stores to the events table, and publishes relevant events to `events:classified` for the brief pipeline.
+classifies (rules -> LoRA -> LLM, see classify.py), stores to the events table, and publishes relevant event ids to
+`events:classified`.
 
-Run: python -m radar.ingest.worker        (loops)      |  process_available() is used by tests and the API.
+Nothing in this repository consumes `events:classified` yet: a brief is started by a person (UI button or POST /briefs).
+Feeds are published when someone presses Poll in the UI or calls POST /ingest/poll; there is no scheduled poller.
+Known prototype limits: pending (delivered but unacknowledged) messages are not reclaimed after a crash, and the SQL
+insert and the classified-stream publish are not atomic (no outbox).
+
+Run: python -m radar.ingest.worker        (loops)      |  process_available() is used by tests, the API and the UI.
 """
 
 from __future__ import annotations
@@ -19,7 +25,7 @@ from radar.data.schemas import Topic
 from radar.db import create_all
 from radar.db.schema import events
 from radar.infra import get_db_engine, get_redis
-from radar.ingest.classify import classify
+from radar.ingest.classify import classify, llm_callback
 from radar.ingest.feeds import RAW_STREAM
 
 log = logging.getLogger(__name__)
@@ -79,11 +85,21 @@ def _ensure_group(r) -> None:
         pass  # group exists
 
 
-def process_available(deduper: Deduper | None = None, llm=None, max_items: int = 500) -> dict:
-    """Process everything currently in the raw stream once. Returns counters."""
+_AUTO = object()
+
+
+def process_available(deduper: Deduper | None = None, llm=_AUTO, max_items: int = 500) -> dict:
+    """Process everything currently in the raw stream once. Returns counters.
+
+    `llm` defaults to the configured LLM tier (classify.llm_callback: the cheap model, or None under the offline mock),
+    so the worker, the API and the UI all run the same rules -> LoRA -> LLM chain. Pass llm=None to switch the tier off.
+    """
     create_all()
     r = get_redis()
     _ensure_group(r)
+    if llm is _AUTO:
+        llm = llm_callback()
+    llm_name = getattr(llm, "model_name", None) if llm is not None else None
     deduper = deduper or Deduper()
     eng = get_db_engine()
     stats = {"read": 0, "duplicates": 0, "stored": 0, "relevant": 0}
@@ -104,7 +120,7 @@ def process_available(deduper: Deduper | None = None, llm=None, max_items: int =
             row = {"event_id": item["event_id"], "source": item["source"], "url": item.get("url", ""), "title": item["title"], "summary": item.get("summary", ""),
                    "published": str(item.get("published", datetime.now(UTC).isoformat())), "jurisdiction": cl.jurisdiction.value, "topic": cl.topic.value,
                    "urgency": cl.urgency, "language": cl.language, "status": "new" if cl.topic in RELEVANT else "ignored",
-                   "raw": {"classifier": cl.tier, "confidence": cl.confidence}}
+                   "raw": {"classifier": cl.tier, "confidence": cl.confidence, "classifier_llm": llm_name if cl.tier == "llm" else None}}
             with eng.begin() as c:
                 c.execute(insert(events), [row])
             stats["stored"] += 1

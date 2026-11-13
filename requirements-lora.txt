@@ -1,7 +1,9 @@
 # Optional: enables the fine-tuned LoRA classifier tier (RADAR_CLASSIFIER_MODEL=models/event-classifier-lora).
 # CPU wheels are enough for inference:  pip install torch --index-url https://download.pytorch.org/whl/cpu
-torch>=2.2
-transformers>=4.44
-peft>=0.12
+# Pinned to the versions the saved adapter was loaded and evaluated with (peft 0.21.2 is also the version recorded
+# in models/event-classifier-lora/adapter_config.json).
+torch==2.15.0
+transformers==5.22.2
+peft==0.21.2
 sentencepiece
 protobuf
