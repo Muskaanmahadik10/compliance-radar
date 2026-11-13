@@ -1,0 +1,115 @@
+{
+  "provider": "env",
+  "models": {
+    "cheap": "openai/gpt-oss-20b",
+    "strong": "openai/gpt-oss-120b"
+  },
+  "commit": "c5adf9e-dirty",
+  "run_at": "2026-11-13T17:50:58+00:00",
+  "summary": {
+    "truth_events": 11,
+    "classified_relevant": 11,
+    "evaluated": 3,
+    "classified_by": {
+      "rules": 11
+    },
+    "sample": "first 3 matching events (not random)",
+    "impact_ids_exact": 1.0,
+    "policy_cited": 1.0,
+    "grounded_first_try": 1.0,
+    "structural_ok": 0.667,
+    "actions_cited": 1.0,
+    "critic_ran": 1.0,
+    "critic_approved": 0.333,
+    "fallback_rate": 0.0,
+    "mean_cost_usd_estimated": 0.005,
+    "p50_latency_s": 151.8
+  },
+  "rows": [
+    {
+      "topic": "pfas",
+      "title": "ECHA committees advance universal PFAS restriction: fluoropolymers and",
+      "impact_ids_exact": true,
+      "suppliers_found": 54,
+      "suppliers_truth": 54,
+      "policy_cited": true,
+      "grounded_first_try": true,
+      "first_try_removals": 0,
+      "first_try_codes": [
+        "count_mismatch",
+        "name_corrected",
+        "uncited_entry"
+      ],
+      "n_attempts": 2,
+      "structural_ok": true,
+      "actions_cited": true,
+      "critic_ran": true,
+      "critic_approved": true,
+      "critic_notes": [],
+      "final_findings": [],
+      "fallback": false,
+      "drafted_by": "openai/gpt-oss-120b",
+      "n_citations": 2,
+      "cost_usd": 0.005208,
+      "latency_s": 110.18
+    },
+    {
+      "topic": "rohs",
+      "title": "Commission Delegated Directive amending RoHS Annex III: exemption 7(a)",
+      "impact_ids_exact": true,
+      "suppliers_found": 23,
+      "suppliers_truth": 23,
+      "policy_cited": true,
+      "grounded_first_try": true,
+      "first_try_removals": 0,
+      "first_try_codes": [
+        "name_corrected"
+      ],
+      "n_attempts": 2,
+      "structural_ok": true,
+      "actions_cited": true,
+      "critic_ran": true,
+      "critic_approved": false,
+      "critic_notes": [
+        "Action 3: no citation for the 15‑day breach‑notice requirement; the cited contracts only obligate notification, not breach notice, and apply only to Ocean Systems and Apex Precision, not all suppliers."
+      ],
+      "final_findings": [],
+      "fallback": false,
+      "drafted_by": "openai/gpt-oss-120b",
+      "n_citations": 6,
+      "cost_usd": 0.00509,
+      "latency_s": 151.76
+    },
+    {
+      "topic": "reach_svhc",
+      "title": "Candidate List updated with three new SVHCs including a brominated fla",
+      "impact_ids_exact": true,
+      "suppliers_found": 18,
+      "suppliers_truth": 18,
+      "policy_cited": true,
+      "grounded_first_try": true,
+      "first_try_removals": 0,
+      "first_try_codes": [
+        "name_corrected",
+        "uncited_entry"
+      ],
+      "n_attempts": 2,
+      "structural_ok": false,
+      "actions_cited": true,
+      "critic_ran": true,
+      "critic_approved": false,
+      "critic_notes": [
+        "Summary states 'including 8 tier‑1 suppliers' which contradicts the authoritative SQL total of 11 tier‑1 suppliers and lacks a citation.",
+        "Automatic check indicates a mismatch in supplier count in the summary (claims 1 supplier vs SQL total 18); the summary should correctly reflect the total number of suppliers."
+      ],
+      "final_findings": [
+        "summary says '1 suppliers' but the SQL total is 18"
+      ],
+      "fallback": false,
+      "drafted_by": "openai/gpt-oss-120b",
+      "n_citations": 6,
+      "cost_usd": 0.004696,
+      "latency_s": 159.85
+    }
+  ]
+}

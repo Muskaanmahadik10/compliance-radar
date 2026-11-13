@@ -1,6 +1,27 @@
 # ComplianceRadar: design document
 
-**One line:** a real-time compliance and supplier-risk copilot for electronics manufacturers. It watches regulatory and news feeds, works out which of the company's own policies, contracts and suppliers are affected, and drafts an evidence-cited impact brief for the compliance owner to approve, in minutes instead of weeks.
+> **This is the plan the project was built from (Nov 2026), kept as written below §0.** Several planned items were
+> not built or were built differently. §0 lists what exists in the repository today; the README is the source of truth
+> for results. Where this plan and §0 disagree, §0 is correct.
+
+**One line (as planned):** a real-time compliance and supplier-risk copilot for electronics manufacturers. It watches regulatory and news feeds, works out which of the company's own policies, contracts and suppliers are affected, and drafts an evidence-cited impact brief for the compliance owner to approve, in minutes instead of weeks.
+
+## 0. What was actually built (updated after the 13 Nov 2026 audit)
+
+| Planned | Built |
+|---|---|
+| Continuous feed polling, real-time | Feeds are polled **when a user presses Poll** (UI) or calls `POST /ingest/poll`. A Redis Streams worker classifies what was published. No scheduler is shipped, and nothing consumes `events:classified`: a person picks the event to brief. |
+| Fine-tuned classifier + LLM fallback | Rules -> LoRA (optional) -> LLM. Since commit c5adf9e the worker, API and UI all run the LLM tier (cheap model); before that it ran only in `evaluation/classifier.py`. Measured on 52 hand-written **English** headlines, **topic only** (jurisdiction and urgency are not evaluated). |
+| bge-m3 multilingual embeddings, bge-reranker-v2-m3 | Default is English `bge-small-en-v1.5` + MiniLM reranker; the multilingual models are a setting, not evaluated. |
+| Critic "checks every claim has a citation" | Deterministic verifier: cited sections must be retrieved; supplier/part/product ids must be in the SQL result (names replaced with the record's); policy/contract entries cite only their own document; suppliers cite only their own contract; every action needs a valid citation; explicit totals in the summary must equal SQL. **Not checked deterministically:** verbatim quotes, whether a passage supports a claim, obligation direction, deadlines. That is left to the LLM critic and the human reviewer. Structural failures block automatic approval whatever the critic says. |
+| Right to be forgotten that "proves" a document no longer influences answers | **Retrieval erasure with recorded checks:** a tombstone (respected by every ingest/rebuild path), vector chunks deleted, local source copies removed, SQL row marked deleted, then probe/citation checks recorded in an HMAC-signed certificate. The certificate is demo-signed (public key) unless `RADAR_SIGNING_KEY` is set. Briefs, tasks, checkpoints and chat history that quoted the document are listed or out of scope, not redacted. No model here was trained on the documents. |
+| PII redaction before any external call | E-mail addresses and phone numbers only, on the question, history and retrieved passages (chat and briefs). Dates are preserved. |
+| RAGAS, DeepEval, nightly real-model evals | Not built. Retrieval hit@k/MRR, classifier accuracy/F1 and a brief evaluation with narrow named checks exist; CI runs mock-model tests only. |
+| Langfuse + OpenTelemetry traces | A callback is attached when keys are set; not verified end to end (the `RADAR_LANGFUSE_*` settings are not passed to the SDK handler). Treat as not working. |
+| Role-based approval, audit log | Audit log yes. No authentication: reviewer names are typed text. Run locally only. |
+| Durable review | SQLite/Postgres checkpointer; if it cannot open, an in-memory saver is used and recorded on each brief. Duplicate briefs per event are possible; task publication is not idempotent across a crash. |
+| Pending-message recovery, transactional outbox | Not built (documented limitation). |
+| `create_task` write tool, PDF export, HF Hub push, Next.js, Kubernetes, Terraform | Not built. Tasks are created by the graph's `publish` step after human approval. |
 
 Owner: Muskaan Mahadik · Project 2 of 2 · Nov 2026 · Companion to [Factory Copilot](https://github.com/Muskaanmahadik10/factory-copilot)
 

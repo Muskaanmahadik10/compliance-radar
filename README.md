@@ -1,104 +1,134 @@
 # ComplianceRadar
 
-**A real-time compliance and supplier-risk copilot for electronics manufacturers.** It watches regulatory and news feeds, works out which of the company's suppliers, parts, products and contract clauses a change affects, and drafts an impact brief in which every claim is cited. Numbers come from SQL, reasoning from an LLM, a verifier removes anything the model made up, and a person approves before any task is issued.
+**A compliance and supplier-risk prototype for electronics manufacturers, built on synthetic company data.** When a user polls regulatory and news feeds, a stream worker classifies each item. For an event the user picks, a LangGraph pipeline finds the affected suppliers, parts and products with SQL, retrieves the relevant policy and contract passages, and drafts an impact brief with citations. Deterministic checks then remove invented ids and citations that are not in the retrieved evidence, an LLM critic reviews the draft, and a person approves it before any task is created.
 
 ![CI](https://github.com/Muskaanmahadik10/compliance-radar/actions/workflows/ci.yml/badge.svg)
 
-Built with **LangGraph · LangChain · Qdrant (hybrid dense + BM25) · cross-encoder reranking · Redis Streams · PostgreSQL · FastAPI (SSE) · MCP · Docker Compose · GitHub Actions**. Runs fully offline on a laptop with no keys (`RADAR_MODE=local`, mock LLM); the same code runs against real services and real models.
+Built with **LangGraph · LangChain · Qdrant (hybrid dense + BM25) · cross-encoder reranking · Redis Streams · PostgreSQL · FastAPI (SSE) · MCP · LoRA (PEFT) · Docker Compose · GitHub Actions**. Runs offline on a laptop with no keys (`RADAR_MODE=local`, mock LLM); the same code runs against real services and real models.
+
+> **How this version came about.** An AI coding assistant built the first version. A second AI (Codex) audited commit `af9dd6b` and found 47 grouped issues. Among them: the LLM classifier tier never ran in live ingestion; erased documents came back on re-index; retrieved passages skipped e-mail/phone masking; dates were masked as phone numbers; and a brief metric measured the final draft while being named "first try". I verified each finding against the code, fixed the ones that affect the results or the demo, and added a regression test for every fix (54 tests in total). The original results are kept unchanged in [`artifacts/superseded_af9dd6b/`](artifacts/superseded_af9dd6b/README.md) with an explanation. What is still open is listed under [Limitations](#limitations).
 
 ## The problem
 
-A manufacturer with thousands of suppliers has to react to a steady stream of changes: a PFAS restriction, a RoHS exemption expiring, a new SVHC on the REACH Candidate List, a supplier added to the US Entity List, a factory fire. Today someone reads the notice, searches policies and contracts, queries the supplier master and BOMs, and writes an assessment. That takes days, and a missed change means a blocked shipment or a failed customer audit.
+A manufacturer with thousands of suppliers has to react to a steady stream of changes: a PFAS restriction, a RoHS exemption expiring, a new SVHC on the REACH Candidate List, a supplier added to the US Entity List, a factory fire. Today someone reads the notice, searches policies and contracts, queries the supplier master and BOMs, and writes an assessment.
 
 ## What it does
 
 ```
  feeds (EUR-Lex, ECHA, Federal Register, news, replay fixture)
-        │ pollers
+        │ published when a user presses Poll (UI) or calls POST /ingest/poll; no scheduler
         ▼
-   Redis Stream  ──►  worker: dedupe (id + MinHash LSH) · language · classify (rules → LoRA → LLM)
-                              │ relevant event
+   Redis Stream  ──►  worker: dedupe (id + MinHash LSH) · language · classify topic (rules → LoRA → LLM)
+                              │ stored in SQL; a person picks an event to brief
                               ▼
-   LangGraph pipeline (durable checkpoints)
+   LangGraph pipeline (SQLite/Postgres checkpoints)
    triage ─► decompose ─► research ×N in parallel ─► map impact (SQL) ─► draft ─► verify + critic ─┬─► HUMAN REVIEW ─► publish tasks
-              (cheap model)   (hybrid search + rerank)   suppliers·parts·BOMs   (strong model)  ▲        │   (interrupt / resume)
+              (cheap model)   (hybrid search + rerank)   suppliers·parts·products (strong model)  ▲        │   (interrupt / resume)
                                                                                                 └ revise ┘
-   Also: streaming chat over the knowledge base with citations · verified document erasure with a signed certificate · MCP server
+   Also: streaming chat over the knowledge base with citation-id checks · document erasure from retrieval with recorded checks · MCP server
 ```
 
-![Brief review screen: RoHS exemption expiry, 23 suppliers affected, critic feedback, cited actions](docs/img/brief_review.jpg)
-
-**One real run** (the EU removes RoHS exemption 7(a) for lead in high-melting-temperature solder): the brief reports 23 suppliers, 11 parts and 10 products from SQL, lists the priority suppliers by id, and proposes owned actions with deadlines quoted from the cited policy and contract sections. The larger model had hit its daily quota, so the router fell back to the smaller one and recorded that on the brief. The critic did not approve it: one action cited SOP-102 §1 where §2 is the section that supports it. That note goes to the human reviewer, who approved it in the UI. Cost: **$0.0026**.
+![Brief review screen (screenshot from commit af9dd6b): RoHS exemption expiry, 23 suppliers affected, critic feedback, cited actions](docs/img/brief_review.jpg)
 
 ## Results
 
-All numbers are produced by scripts in `evaluation/` and stored in `artifacts/`.
+Every number below comes from a file in `artifacts/`, produced by a script in `evaluation/`. All evaluations are small and use synthetic company records.
 
 ### Retrieval: does hybrid search and reranking earn its keep?
 
-70 questions against 301 chunks. *Direct* questions reuse the documents' vocabulary; *paraphrased* questions avoid it ("forever chemicals" for PFAS, "blacklisted vendor" for Entity List).
+`artifacts/retrieval_eval.json`: 70 English questions written against the synthetic documents (301 chunks). *Direct* questions reuse the documents' vocabulary. *Paraphrased* questions avoid it ("forever chemicals" for PFAS, "blacklisted vendor" for Entity List).
 
-| Method | Direct hit@1 (n=45) | Paraphrased hit@1 (n=25) | Paraphrased hit@5 | Paraphrased MRR | p50 latency |
+| Method | Direct hit@1 (n=45) | Paraphrased hit@1 (n=25) | Paraphrased hit@5 | Paraphrased MRR | Paraphrased p50 latency |
 |---|---|---|---|---|---|
 | Dense (bge-small) | 0.98 | 0.64 | 0.76 | 0.69 | 12 ms |
 | Sparse (BM25) | 0.96 | 0.40 | 0.60 | 0.47 | 16 ms |
 | Hybrid (RRF fusion) | 1.00 | 0.52 | **0.84** | 0.65 | 17 ms |
-| **Hybrid + cross-encoder rerank** | 1.00 | **0.76** | **0.84** | **0.79** | 430 ms |
+| **Hybrid + cross-encoder rerank** | 1.00 | **0.76** | **0.84** | **0.79** | 429 ms |
 
-Reading: on easy questions everything works, which is why the harder set exists. Fusion widens what is found (hit@5), reranking puts the right passage first (hit@1 +12 points over dense, +36 over BM25) at the price of latency.
+How to read it: on direct questions every method works, which is why the paraphrased set exists. Fusion alone is *worse* than dense at hit@1 (0.52 vs 0.64) but finds more in the top 5. Reranking puts the right passage first (0.76), at about 25× the latency. Limits: this is an internal regression set authored against the generator, not held-out company traffic. A hit means the returned section starts with the gold section number. Each mode's latency includes computing both dense and sparse query embeddings.
 
-### Event classification: three tiers, cheapest first (52 hand-written headlines, 13 topics)
+### Event classification: topic accuracy on 52 English headlines
 
-| Tier | Accuracy | Macro-F1 | LLM calls | Cost for 52 headlines |
-|---|---|---|---|---|
-| Keyword rules | 0.60 | 0.62 | 0 | $0 |
-| LoRA encoder alone (xlm-roberta-base, 0.43% of weights trained) | 0.81 | 0.80 | 0 | $0, 38 ms per headline on CPU |
-| Rules → LoRA | 0.87 | 0.86 | 0 | $0 |
-| Rules → LLM | 0.92 | 0.92 | 24 | $0.00066 |
-| **Rules → LoRA → LLM** | **0.94** | **0.94** | **5** | **$0.00014** |
+`artifacts/classifier_eval.json`: 52 hand-written English headlines, 4 per topic, 13 topics. **Topic only**: jurisdiction and urgency are produced but not evaluated. Titles only.
 
-Reading: the fine-tuned encoder does not beat the LLM on its own, and that is not its job. As the middle tier it answers the 19 headlines it is confident about (probability ≥ 0.8), so only 5 of 52 reach the LLM instead of 24: **79% fewer LLM calls at the same accuracy**. With no LLM at all, rules → LoRA still reaches 0.87.
+| Configuration | Correct / 52 | Accuracy | Macro-F1 | LLM calls | LLM API cost |
+|---|---|---|---|---|---|
+| Keyword rules | 31 | 0.60 | 0.62 | 0 | $0 |
+| LoRA encoder alone (xlm-roberta-base, 1.19M trained parameters) | 42 | 0.81 | 0.80 | 0 | $0 (38 ms per headline on CPU) |
+| Rules → LoRA | 45 | 0.87 | 0.86 | 0 | $0 |
+| Rules → LLM (gpt-oss-20b) | 48 | 0.92 | 0.92 | 24 | $0.00066 |
+| **Rules → LoRA → LLM** | **49** | **0.94** | **0.94** | **5** | **$0.00014** |
 
-How it was built: a strong LLM wrote 780 varied headlines (60 per topic; `scripts/make_classifier_dataset.py`, about $0.01), the encoder was fine-tuned with LoRA on a Colab T4 (`colab/train_classifier.ipynb`), and the adapter (4.7 MB, `models/event-classifier-lora/`) is loaded by `radar/ingest/lora_classifier.py` when `RADAR_CLASSIFIER_MODEL` is set. The 52 test headlines were written by hand and never shown to the generator. With 4 examples per topic the per-topic numbers are indicative only; PFAS is the weak spot (the encoder confuses it with REACH), and the LLM tier is what catches those.
+How to read it: on its own, the fine-tuned encoder is weaker than the LLM tier. As a middle tier it decided the 19 headlines where its softmax score was ≥ 0.8, so 5 of 52 reached the LLM instead of 24: **79% fewer LLM calls with comparable accuracy on this set (49 vs 48 correct)**. One headline is not a meaningful difference, and 52 headlines say nothing about savings on live feeds. Keyword rules that fire with confidence ≥ 0.6 are final; one confident rule error (a battery headline labelled conflict minerals) never reaches the later tiers.
 
-### Impact briefs (11 events, ground truth written by hand in `evaluation/briefs.py`)
+**Offline vs live.** These numbers come from `evaluation/classifier.py` at commit `af9dd6b`. In that commit, live ingestion ran rules only (or rules → LoRA): the worker, API and UI never passed the LLM callback. Since commit `c5adf9e` all of them build the LLM tier from the same function the evaluation uses (`classify.llm_callback`), and each stored event records which tier decided it. The live path has not been re-measured on this set. The LoRA tier is optional (`RADAR_CLASSIFIER_MODEL`, needs `requirements-lora.txt`), and under the mock provider the LLM tier is off.
 
-| Metric | Full run, 11 events | After verifier and prompt refinements, 3-event sample |
-|---|---|---|
-| Supplier impact exactly matches ground truth | **11 / 11** | 3 / 3 |
-| Governing policy is among the citations | **11 / 11** | 3 / 3 |
-| Every action carries a valid citation | **11 / 11** | 3 / 3 |
-| Invented supplier/part ids or citations outside the evidence | **0** | 0 |
-| Wrong-supplier contract citations removed by the verifier | (check did not exist yet) | 5 across 3 drafts; 0 in a further run after the prompt fix |
-| LLM critic approved (after at most one revision) | 7 / 11 | 3 / 3 |
-| Fallback briefs (model produced nothing usable) | 0 | 0 |
-| Mean cost per brief / median time | $0.0034 / 71 s | $0.0028 / 74 s |
+How the encoder was built: a strong LLM wrote 780 headlines (60 per topic; `scripts/make_classifier_dataset.py`). 702 were used for training and 78 held out for validation (best epoch chosen by validation macro-F1). LoRA (r=16, query/value, plus the classification head) was trained on a Colab T4 (`colab/train_classifier.ipynb`). The adapter (4.7 MB, `models/event-classifier-lora/`) still needs the 279M-parameter base model at inference. The 52 test headlines were written by hand and never shown to the generator; no exact title overlap with training. How the 0.8 threshold was chosen was not recorded. The base model is multilingual, but no Chinese headline was in training or test, so multilingual accuracy is unmeasured.
 
-Models: gpt-oss-20b (decomposition, rewriting) and gpt-oss-120b (drafting, critique) on Groq's free tier; `artifacts/brief_eval_env.json` and `brief_eval_env_sample3.json`.
+### Impact briefs
 
-Reading the critic column: in the full run it rejected 4 briefs. Two were real reasoning errors (a clause cited in the wrong direction; one supplier's contract used as evidence about another). Two were over-strict (asking for citations on facts restated from the event or on database ids). I turned the first kind into a deterministic check that removes the citation, told the critic what counts as a source, and tightened the drafting prompt; on the sample that followed, the critic approved all three. The refinements were validated on 3 events rather than all 11 because the free tier's daily token quota (200k) was exhausted by the first run; `python -m evaluation.briefs --provider env` reproduces the full run.
+`evaluation/briefs.py` runs the pipeline on the replay events and compares against truth written by hand in that file. Each column is exactly this check:
 
-The mock-model run (`artifacts/brief_eval_mock.json`, part of CI) passes 11 / 11 on every row; it checks the pipeline, not model quality.
+- **impact ids exact**: the brief's full supplier id set equals the truth set.
+- **policy cited**: the governing policy is among the citations. This checks presence, not support.
+- **grounded first try**: on the *first* draft, the verifier removed nothing.
+- **structural ok**: in the final brief, every action has a valid citation and the summary's totals equal SQL.
+- **critic approved**: the LLM critic's own verdict.
 
-### Verified erasure ("right to be forgotten")
+Not scored: whether quotes are verbatim, whether cited passages entail the actions, obligation direction, deadlines.
 
-![Erasure verified in the UI with its signed certificate](docs/img/erasure_certificate.jpg)
+**Real models after the fixes**: `artifacts/brief_eval_env_sample3.json`. gpt-oss-20b for decomposition, gpt-oss-120b for drafting and critique (Groq free tier). This is the **first 3 matching replay events** (PFAS, RoHS, REACH), not a random sample, run on the code of commit `c5adf9e`.
 
-`DELETE /documents/{id}` removes a document from the vector store, database, disk and caches, then proves it: zero chunks left, no probe question (built from the document's own wording) retrieves it in dense, sparse or hybrid mode, no answer cites it, a full collection scan is clean. The result is an HMAC-signed certificate in the audit log; tampering with any field invalidates the signature (tested). Scope stated in the certificate: this is retrieval-store erasure; a model fine-tuned on the documents would also need retraining or unlearning.
+| Check | Result (n = 3) |
+|---|---|
+| Impact ids exact (full supplier id set equals truth) | 3 / 3 (54, 23 and 18 suppliers) |
+| Governing policy cited | 3 / 3 |
+| Grounded first try (verifier removed nothing from draft 1) | 3 / 3 |
+| Every action carries a valid citation | 3 / 3 |
+| Structural checks pass on the final brief | 2 / 3 (see below) |
+| LLM critic approved the final brief | 1 / 3 |
+| Briefs that went through the one allowed revision | 3 / 3 |
+| Fallback briefs | 0 |
+| Estimated cost per brief / median time | $0.0050 / 152 s |
+
+What the two non-approved briefs show:
+- **RoHS.** The final draft had an action claiming a 15-day breach-notice duty for all suppliers. The cited contract clauses only require notification, and only bind two suppliers. Every citation existed, so the deterministic checks passed; the critic caught it.
+- **REACH.** The summary said "8 tier‑1 suppliers"; SQL says 11. The critic caught it. The verifier also failed this brief, but for the wrong reason: "tier‑1" was written with a non-breaking hyphen, which the count check read as "1 suppliers", so it missed the real error. Fixed in commit `50128cc` with a regression test. This run predates that fix.
+
+Both briefs reached the human reviewer flagged, not approved: that is the intended path. They also show that valid citations do not guarantee a correct claim.
+
+The mock-model run (`artifacts/brief_eval_mock.json`, 11 events) passes every check. That shows the pipeline and checks work end to end. It says nothing about model quality, because the mock critic always approves.
+
+**History.** At commit `af9dd6b` a full 11-event real-model run reported supplier counts matching truth 11/11, governing policy cited 11/11, every action cited 11/11 and critic approval 7/11. Of the 4 rejections, two were real reasoning errors (a clause cited in the wrong direction; one supplier's contract used as evidence about another). Two were over-strict (asking for citations on facts restated from the event, or on database ids). The second kind led to the "SYSTEM OF RECORD vs EVIDENCE" prompt split; the first became the deterministic wrong-contract rule. That run used the old metric definitions, so it is kept in [`artifacts/superseded_af9dd6b/`](artifacts/superseded_af9dd6b/README.md) and not reported as a current result. A full 11-event rerun with the corrected metrics needs about one day of Groq free-tier quota and has not been done.
+
+### Document erasure from retrieval
+
+![Erasure in the UI (screenshot from commit af9dd6b, before tombstones and key labelling)](docs/img/erasure_certificate.jpg)
+
+`DELETE /documents/{id}` (or the Documents tab) works in this order:
+
+1. Writes an erasure **tombstone** first. Every ingest and rebuild path respects it, so ordinary re-indexing cannot bring the document back. Only an explicit demo reset (`python -m radar.data.build --reset-erasures`) clears it.
+2. Deletes the document's vector chunks and its local source copies (its `documents.json` entry and the Markdown file), and marks the SQL row deleted. The title stays as a record.
+3. **Records checks**: zero chunks left; probe questions built from the document's own wording no longer retrieve it in dense, sparse or hybrid mode; answers to them no longer cite it; the tombstone exists; no local source copy remains.
+
+The result is a JSON certificate in the audit log, HMAC-signed. Without `RADAR_SIGNING_KEY` it is signed with a public demo key and says so: that signature only shows the file was not accidentally altered, not who issued it. Tested: erase → re-ingest → rebuild leaves the document out, and only the explicit reset restores it.
+
+What this is not: a proof that the content has no influence left. Briefs, tasks and graph checkpoints that quoted the document are listed in the certificate, not redacted. Browser chat history, backups and copies inside other containers are out of scope. No model in this repository was trained on the company documents, so no weights need unlearning.
 
 ## Design decisions
 
 | Decision | Why |
 |---|---|
-| **SQL counts, LLM prose.** The model's output schema has no field for counts or the event id. | A wrong supplier count is the most damaging error a brief can make, so it is not the model's to make. |
-| **Verifier before critic.** Cited sections must exist in the retrieved evidence; supplier and part ids must exist in the SQL result; violations are removed and reported. | Deterministic checks are free and exact; the LLM critic then judges only whether passages support the claims. |
+| **SQL counts, LLM prose.** The model's output schema has no field for counts or the event id; the full supplier/part/product id lists are stored with each brief. | A wrong supplier count is the most damaging error a brief can make. The summary is still prose, so explicit totals in it ("23 suppliers") are checked against SQL. |
+| **Deterministic verifier before the LLM critic**, with a fixed list of checks (listed in `radar/agent/graph.py`). Structural failures (uncited action, no valid citation, wrong total) block automatic approval even if the critic approves. | Exact checks are free; the critic's opinion is advisory. Verifier status, critic opinion and human decision are shown separately in the UI. |
 | **System-of-record vs evidence** in the prompts. | First real runs hid supplier ids because "everything needs a citation". Separating the two kinds of input fixed it. |
-| **Function-calling structured output with retries and a labelled fallback brief.** | Strict JSON-schema mode rejected optional fields; hosted reasoning models occasionally answer in prose. The pipeline must never crash or invent. |
-| **LangGraph with `Send`, a revise loop and `interrupt`.** Checkpoints in SQLite (local) or Postgres. | Parallel research, a bounded critic loop, and a human decision that can arrive a day later. |
+| **Function-calling structured output with retries and a labelled fallback brief.** | Strict JSON-schema mode rejected optional fields; hosted reasoning models occasionally answer in prose. A failed draft becomes a clearly labelled fallback built from SQL and evidence. |
+| **LangGraph with `Send`, a revise loop and `interrupt`.** Checkpoints in SQLite (local) or Postgres. | Parallel research, a bounded critic loop, and a human decision that can arrive later. The checkpointer in use is recorded on each brief; if neither can be opened, the in-memory fallback is logged and recorded instead of hidden. |
+| **One redaction policy** (`radar/privacy.py`) for every provider-bound text: question, history, retrieved passages, brief evidence. | E-mail addresses and phone numbers only; dates and regulation numbers are kept. |
 | **Two runtime modes behind one interface** (embedded Qdrant + fakeredis + SQLite, or real services). | Anyone can run it in a minute; CI runs both, the second against real Qdrant, Redis and Postgres containers. |
-| **Local embeddings, BM25 and reranker (ONNX).** | Company documents never leave the machine for retrieval; only selected passages reach the LLM, after PII masking. |
-| **Retry policy that reads the provider's answer, plus model fallback.** Per-minute limits are waited out; a daily quota that clears in half an hour is not, and the request goes to the smaller model, which is recorded on the brief. Oversized requests are never retried. | Found the hard way: retrying a daily-quota error three times cost 85 seconds per brief and produced nothing. |
-| **Mock chat model implementing the LangChain interface.** | 34 tests and the mock evaluation need no key, so prompt-format and schema bugs fail in CI. |
+| **Local embeddings, BM25 and reranker (ONNX).** | Company documents are not sent anywhere for retrieval; only selected passages reach the LLM, after masking. |
+| **Retry policy that reads the provider's answer, plus model fallback; no silent mock.** | Per-minute limits are waited out; a daily quota sends the request to the smaller model, recorded on the brief. A real provider without a key now raises an error instead of quietly running the mock. A per-brief cost budget (estimated from reported tokens) stops further model calls. |
+| **Mock chat model implementing the LangChain interface.** | 54 tests and the mock evaluation need no key, so prompt-format and schema bugs fail in CI. |
 
 ## Quick start
 
@@ -106,17 +136,17 @@ The mock-model run (`artifacts/brief_eval_mock.json`, part of CI) passes 11 / 11
 python -m venv .venv && .venv/Scripts/activate        # source .venv/bin/activate on Linux/macOS
 pip install -r requirements.txt
 make data index       # generate the demo company (200 suppliers, 715 parts, 20 products, 52 documents) and index it
-make test             # 34 tests, offline
+make test             # 54 tests, offline
 streamlit run ui/app.py
 ```
 
-In the UI: **Live events → Poll feeds (replay) → Draft brief → Briefs → Approve**. Then try the chat and erase a document under **Documents**.
+In the UI: **Live events → Poll feeds (replay) → Draft brief → Briefs → Approve**. Then try the chat, and erase a document under **Documents**. `python -m radar.data.build --reset-erasures` restores the full demo corpus.
 
-Real models: copy `.env.example` to `.env`, set `RADAR_LLM_PROVIDER=openai_compatible` (Groq, OpenAI, Ollama, vLLM) or `anthropic` and the key. Real services: `docker compose up --build` (Qdrant, Redis, Postgres, Langfuse, API, worker, UI).
+Real models: copy `.env.example` to `.env`, set `RADAR_LLM_PROVIDER=openai_compatible` (Groq, OpenAI, Ollama, vLLM) or `anthropic` and the key. Set `RADAR_SIGNING_KEY` if certificates should be signed with a private key. Real services: `docker compose up --build`. `.dockerignore` keeps `.env` and local state out of the image; secrets come from `env_file` at runtime.
 
-Evaluations: `python -m evaluation.retrieval` · `python -m evaluation.classifier` · `python -m evaluation.briefs --provider env`.
+Evaluations: `python -m evaluation.retrieval` · `python -m evaluation.classifier` · `python -m evaluation.briefs --provider env [--limit N]`.
 
-Fine-tuned classifier tier (optional): `pip install torch --index-url https://download.pytorch.org/whl/cpu && pip install -r requirements-lora.txt`, then set `RADAR_CLASSIFIER_MODEL=models/event-classifier-lora`.
+Fine-tuned classifier tier (optional): `pip install torch --index-url https://download.pytorch.org/whl/cpu && pip install -r requirements-lora.txt` (pinned to the versions it was evaluated with), then set `RADAR_CLASSIFIER_MODEL=models/event-classifier-lora`. The plain Docker image does not include it.
 
 MCP: `python -m radar.mcp_server` exposes search, supplier and BOM lookup, events and brief drafting to Claude Desktop / Claude Code. There is deliberately no tool to approve a brief.
 
@@ -125,29 +155,38 @@ MCP: `python -m radar.mcp_server` exposes search, supplier and BOM lookup, event
 ```
 radar/
   config.py · infra/        settings; Qdrant / Redis / SQL clients for both modes
-  data/                     schemas (pydantic), synthetic company generator, material aliases
-  db/                       SQLAlchemy tables: suppliers, parts, BOM, documents, events, briefs, tasks, audit log
-  retrieval/                chunking with section citations, Qdrant hybrid store, reranker, ingestion
+  data/                     schemas (pydantic), synthetic company generator, build (tombstone-aware)
+  db/                       SQLAlchemy tables: suppliers, parts, BOM, documents, events, briefs, tasks, audit log, erasures
+  retrieval/                chunking with section citations, Qdrant hybrid store, reranker, ingestion (skips erased docs)
   ingest/                   feed pollers, Redis Streams worker, MinHash dedupe, tiered classifier (rules, LoRA, LLM)
-  llm/                      model router, cost ledger (LangChain callback), structured-call retries, mock model
-  tools/                    schema-validated, permission-tagged tools with injection redaction
+  llm/                      model router, cost ledger (estimate), structured-call retries, mock model
+  tools/                    schema-validated tools with injection redaction (permission labels are not enforced)
   agent/                    LangGraph pipeline, prompts, service (start / decide / read)
-  chat.py · forget.py       streaming RAG chat with citation check · verified erasure with signed certificate
+  privacy.py                e-mail/phone masking for provider-bound text
+  chat.py · forget.py       streaming RAG chat with citation-id check · erasure with tombstone and recorded checks
   api.py · mcp_server.py    FastAPI (SSE) · MCP server
 ui/app.py                   Streamlit: events, briefs, chat, documents, metrics
 evaluation/                 retrieval, classifier and brief evaluations
+artifacts/                  current results; superseded_af9dd6b/ keeps the pre-audit results
 colab/train_classifier.ipynb   LoRA fine-tuning of the event classifier
 models/event-classifier-lora/  the trained adapter and its label mapping
-docs/                       DESIGN.md (the plan this was built from), INTERVIEW_NOTES.md
-tests/                      34 tests
+docs/                       DESIGN.md (the original plan + what was built), INTERVIEW_NOTES.md
+tests/                      54 tests (tests/test_audit_fixes.py covers the audit fixes)
 ```
 
-## Honest notes
+## Limitations
 
-- Company data (suppliers, BOMs, policies, contracts) is synthetic and generated for the demo; regulatory feeds are real public sources, and a replay fixture keeps tests deterministic. Not legal advice.
-- Mock-model results check the pipeline, not model quality. Headline numbers are labelled with the models that produced them.
-- The default embedding model is English (`bge-small`) for a small download; set `RADAR_EMBEDDING_MODEL=BAAI/bge-m3` for multilingual retrieval. The Traditional Chinese event above was handled by the classifier's aliases and the LLM, not by multilingual retrieval.
-- Langfuse tracing is wired (callback added when keys are set) but not exercised in CI.
+This is a local prototype on synthetic data, not a production service. Known gaps, deliberately left open:
+
+- **No authentication.** Reviewer and requester names are typed text; anyone who can reach the API can read, approve, spend model budget or erase. Run it only on a trusted machine. Tool permission labels (read/write) are advertised but not enforced at dispatch.
+- **User-triggered polling.** No scheduled poller, and nothing consumes `events:classified`; a person picks the event to brief.
+- **Stream reliability.** Pending Redis messages are not reclaimed after a worker crash, one malformed message can stop a batch, and the SQL insert and the classified-stream publish are not atomic (no outbox). Deduplication keys on source URL/title, so a revised notice at the same URL is treated as a duplicate.
+- **Verifier scope.** Quotes are not checked word for word, and whether a passage supports a claim (direction, deadline) is left to the LLM critic and the reviewer. Chat citations are matched by document and leading section number. Impact scope comes from keywords: negations ("tantalum unaffected") are not understood, and only incident/export events are scoped by country, with a small English country list.
+- **Workflow.** The same event can be briefed twice, and task publication is not idempotent across a crash. If neither SQLite nor Postgres checkpointing can be opened, an in-memory saver is used: the brief records this, and the review cannot be resumed after a restart.
+- **Tracing.** Langfuse is attached when keys are set but is not verified end to end; the `RADAR_LANGFUSE_*` settings are not passed to the SDK handler.
+- **Evaluation size.** 52 headlines, 70 retrieval questions, 11 brief events (3 with real models after the fixes), all English, all against synthetic records. No Chinese evaluation, no RAGAS, no reviewer-time study.
+- **Cost.** The ledger estimates from reported tokens and a price table; unknown models count as $0. Not a bill.
+- Company data (suppliers, BOMs, policies, contracts) is synthetic. Regulatory feeds are real public sources; tests use a replay fixture. Not legal advice.
 
 ## Author
 

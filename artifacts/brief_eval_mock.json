@@ -1,0 +1,319 @@
+{
+  "provider": "mock",
+  "models": {
+    "cheap": "mock",
+    "strong": "mock"
+  },
+  "commit": "50128cc-dirty",
+  "run_at": "2026-11-13T17:58:41+00:00",
+  "summary": {
+    "truth_events": 11,
+    "classified_relevant": 11,
+    "evaluated": 11,
+    "classified_by": {
+      "rules": 11
+    },
+    "sample": "all matching events",
+    "impact_ids_exact": 1.0,
+    "policy_cited": 1.0,
+    "grounded_first_try": 1.0,
+    "structural_ok": 1.0,
+    "actions_cited": 1.0,
+    "critic_ran": 1.0,
+    "critic_approved": 1.0,
+    "fallback_rate": 0.0,
+    "mean_cost_usd_estimated": 0.0,
+    "p50_latency_s": 3.4
+  },
+  "rows": [
+    {
+      "topic": "pfas",
+      "title": "ECHA committees advance universal PFAS restriction: fluoropolymers and",
+      "impact_ids_exact": true,
+      "suppliers_found": 54,
+      "suppliers_truth": 54,
+      "policy_cited": true,
+      "grounded_first_try": true,
+      "first_try_removals": 0,
+      "first_try_codes": [
+        "name_corrected"
+      ],
+      "n_attempts": 1,
+      "structural_ok": true,
+      "actions_cited": true,
+      "critic_ran": true,
+      "critic_approved": true,
+      "critic_notes": [],
+      "final_findings": [
+        "6 name(s) replaced with the names on record: P00331 ('P00331' -> 'PTFE coating - grade A'), P00626 ('P00626' -> 'PTFE coating - automotive'), P00664 ('P00664' -> 'PTFE coating - grade A') ..."
+      ],
+      "fallback": false,
+      "drafted_by": "mock",
+      "n_citations": 8,
+      "cost_usd": 0.0,
+      "latency_s": 4.49
+    },
+    {
+      "topic": "rohs",
+      "title": "Commission Delegated Directive amending RoHS Annex III: exemption 7(a)",
+      "impact_ids_exact": true,
+      "suppliers_found": 23,
+      "suppliers_truth": 23,
+      "policy_cited": true,
+      "grounded_first_try": true,
+      "first_try_removals": 0,
+      "first_try_codes": [
+        "name_corrected"
+      ],
+      "n_attempts": 1,
+      "structural_ok": true,
+      "actions_cited": true,
+      "critic_ran": true,
+      "critic_approved": true,
+      "critic_notes": [],
+      "final_findings": [
+        "6 name(s) replaced with the names on record: P00427 ('P00427' -> 'lead solder - grade B'), P00601 ('P00601' -> 'lead solder - grade A'), P00572 ('P00572' -> 'lead solder - automotive') ..."
+      ],
+      "fallback": false,
+      "drafted_by": "mock",
+      "n_citations": 8,
+      "cost_usd": 0.0,
+      "latency_s": 3.16
+    },
+    {
+      "topic": "reach_svhc",
+      "title": "Candidate List updated with three new SVHCs including a brominated fla",
+      "impact_ids_exact": true,
+      "suppliers_found": 18,
+      "suppliers_truth": 18,
+      "policy_cited": true,
+      "grounded_first_try": true,
+      "first_try_removals": 0,
+      "first_try_codes": [
+        "name_corrected"
+      ],
+      "n_attempts": 1,
+      "structural_ok": true,
+      "actions_cited": true,
+      "critic_ran": true,
+      "critic_approved": true,
+      "critic_notes": [],
+      "final_findings": [
+        "6 name(s) replaced with the names on record: P00456 ('P00456' -> 'brominated flame retardant - automotive'), P00360 ('P00360' -> 'brominated flame retardant - industrial'), P00115 ('P00115' -> 'brominated flame retardant - grade B') ..."
+      ],
+      "fallback": false,
+      "drafted_by": "mock",
+      "n_citations": 8,
+      "cost_usd": 0.0,
+      "latency_s": 3.42
+    },
+    {
+      "topic": "export_control",
+      "title": "BIS adds 12 entities to the Entity List including two Chinese electron",
+      "impact_ids_exact": true,
+      "suppliers_found": 1,
+      "suppliers_truth": 1,
+      "policy_cited": true,
+      "grounded_first_try": true,
+      "first_try_removals": 0,
+      "first_try_codes": [],
+      "n_attempts": 1,
+      "structural_ok": true,
+      "actions_cited": true,
+      "critic_ran": true,
+      "critic_approved": true,
+      "critic_notes": [],
+      "final_findings": [],
+      "fallback": false,
+      "drafted_by": "mock",
+      "n_citations": 8,
+      "cost_usd": 0.0,
+      "latency_s": 3.36
+    },
+    {
+      "topic": "supplier_incident",
+      "title": "Factory fire halts production at a Vietnam capacitor plant supplying t",
+      "impact_ids_exact": true,
+      "suppliers_found": 2,
+      "suppliers_truth": 2,
+      "policy_cited": true,
+      "grounded_first_try": true,
+      "first_try_removals": 0,
+      "first_try_codes": [
+        "name_corrected"
+      ],
+      "n_attempts": 1,
+      "structural_ok": true,
+      "actions_cited": true,
+      "critic_ran": true,
+      "critic_approved": true,
+      "critic_notes": [],
+      "final_findings": [
+        "2 name(s) replaced with the names on record: P00396 ('P00396' -> 'tantalum capacitor - consumer'), P00480 ('P00480' -> 'tantalum capacitor - grade B')"
+      ],
+      "fallback": false,
+      "drafted_by": "mock",
+      "n_citations": 8,
+      "cost_usd": 0.0,
+      "latency_s": 3.4
+    },
+    {
+      "topic": "battery",
+      "title": "Delegated act under the Battery Regulation sets battery passport data ",
+      "impact_ids_exact": true,
+      "suppliers_found": 16,
+      "suppliers_truth": 16,
+      "policy_cited": true,
+      "grounded_first_try": true,
+      "first_try_removals": 0,
+      "first_try_codes": [
+        "name_corrected"
+      ],
+      "n_attempts": 1,
+      "structural_ok": true,
+      "actions_cited": true,
+      "critic_ran": true,
+      "critic_approved": true,
+      "critic_notes": [],
+      "final_findings": [
+        "6 name(s) replaced with the names on record: P00232 ('P00232' -> 'lithium-ion cell - grade A'), P00443 ('P00443' -> 'lithium-ion cell - grade A'), P00043 ('P00043' -> 'lithium-ion cell - consumer') ..."
+      ],
+      "fallback": false,
+      "drafted_by": "mock",
+      "n_citations": 8,
+      "cost_usd": 0.0,
+      "latency_s": 3.44
+    },
+    {
+      "topic": "pfas",
+      "title": "EPA final rule under TSCA requires reporting of PFAS in imported artic",
+      "impact_ids_exact": true,
+      "suppliers_found": 54,
+      "suppliers_truth": 54,
+      "policy_cited": true,
+      "grounded_first_try": true,
+      "first_try_removals": 0,
+      "first_try_codes": [
+        "name_corrected"
+      ],
+      "n_attempts": 1,
+      "structural_ok": true,
+      "actions_cited": true,
+      "critic_ran": true,
+      "critic_approved": true,
+      "critic_notes": [],
+      "final_findings": [
+        "6 name(s) replaced with the names on record: P00331 ('P00331' -> 'PTFE coating - grade A'), P00626 ('P00626' -> 'PTFE coating - automotive'), P00664 ('P00664' -> 'PTFE coating - grade A') ..."
+      ],
+      "fallback": false,
+      "drafted_by": "mock",
+      "n_citations": 8,
+      "cost_usd": 0.0,
+      "latency_s": 3.58
+    },
+    {
+      "topic": "rba_labour",
+      "title": "US CBP expands UFLPA enforcement to polysilicon and aluminium componen",
+      "impact_ids_exact": true,
+      "suppliers_found": 21,
+      "suppliers_truth": 21,
+      "policy_cited": true,
+      "grounded_first_try": true,
+      "first_try_removals": 0,
+      "first_try_codes": [
+        "name_corrected"
+      ],
+      "n_attempts": 1,
+      "structural_ok": true,
+      "actions_cited": true,
+      "critic_ran": true,
+      "critic_approved": true,
+      "critic_notes": [],
+      "final_findings": [
+        "6 name(s) replaced with the names on record: P00707 ('P00707' -> 'aluminium housing - grade A'), P00351 ('P00351' -> 'aluminium housing - grade A'), P00211 ('P00211' -> 'aluminium housing - industrial') ..."
+      ],
+      "fallback": false,
+      "drafted_by": "mock",
+      "n_citations": 8,
+      "cost_usd": 0.0,
+      "latency_s": 2.93
+    },
+    {
+      "topic": "export_control",
+      "title": "經濟部更新戰略性高科技貨品出口管制清單，新增高效能FPGA與GaN射頻元件",
+      "impact_ids_exact": true,
+      "suppliers_found": 20,
+      "suppliers_truth": 20,
+      "policy_cited": true,
+      "grounded_first_try": true,
+      "first_try_removals": 0,
+      "first_try_codes": [
+        "name_corrected"
+      ],
+      "n_attempts": 1,
+      "structural_ok": true,
+      "actions_cited": true,
+      "critic_ran": true,
+      "critic_approved": true,
+      "critic_notes": [],
+      "final_findings": [
+        "6 name(s) replaced with the names on record: P00685 ('P00685' -> 'high-performance FPGA - grade A'), P00131 ('P00131' -> 'high-performance FPGA - consumer'), P00005 ('P00005' -> 'high-performance FPGA - industrial') ..."
+      ],
+      "fallback": false,
+      "drafted_by": "mock",
+      "n_citations": 8,
+      "cost_usd": 0.0,
+      "latency_s": 3.24
+    },
+    {
+      "topic": "packaging",
+      "title": "Implementing regulation on recycled content calculation for plastic pa",
+      "impact_ids_exact": true,
+      "suppliers_found": 38,
+      "suppliers_truth": 38,
+      "policy_cited": true,
+      "grounded_first_try": true,
+      "first_try_removals": 0,
+      "first_try_codes": [
+        "name_corrected"
+      ],
+      "n_attempts": 1,
+      "structural_ok": true,
+      "actions_cited": true,
+      "critic_ran": true,
+      "critic_approved": true,
+      "critic_notes": [],
+      "final_findings": [
+        "6 name(s) replaced with the names on record: P00032 ('P00032' -> 'EPS foam packaging - grade B'), P00031 ('P00031' -> 'EPS foam packaging - consumer'), P00240 ('P00240' -> 'EPS foam packaging - grade A') ..."
+      ],
+      "fallback": false,
+      "drafted_by": "mock",
+      "n_citations": 8,
+      "cost_usd": 0.0,
+      "latency_s": 3.26
+    },
+    {
+      "topic": "cybersecurity",
+      "title": "Commission publishes Cyber Resilience Act guidance on SBOM format and ",
+      "impact_ids_exact": true,
+      "suppliers_found": 0,
+      "suppliers_truth": 0,
+      "policy_cited": true,
+      "grounded_first_try": true,
+      "first_try_removals": 0,
+      "first_try_codes": [],
+      "n_attempts": 1,
+      "structural_ok": true,
+      "actions_cited": true,
+      "critic_ran": true,
+      "critic_approved": true,
+      "critic_notes": [],
+      "final_findings": [],
+      "fallback": false,
+      "drafted_by": "mock",
+      "n_citations": 8,
+      "cost_usd": 0.0,
+      "latency_s": 2.91
+    }
+  ]
+}
