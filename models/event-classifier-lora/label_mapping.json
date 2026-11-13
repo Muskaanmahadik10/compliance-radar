@@ -1,0 +1,18 @@
+{
+  "id2label": {
+    "0": "battery",
+    "1": "conflict_minerals",
+    "2": "csrd_esg",
+    "3": "cybersecurity",
+    "4": "data_protection",
+    "5": "export_control",
+    "6": "other",
+    "7": "packaging",
+    "8": "pfas",
+    "9": "rba_labour",
+    "10": "reach_svhc",
+    "11": "rohs",
+    "12": "supplier_incident"
+  },
+  "note": "Order used in colab/train_classifier.ipynb: sorted topic ids."
+}

@@ -2,7 +2,7 @@
 
 Three tiers, cheapest first:
   1. rule-based keyword classifier (always available, used by tests and as a fallback)
-  2. fine-tuned LoRA encoder (slice 9; loaded from Hugging Face Hub when configured)
+  2. fine-tuned LoRA encoder (optional; RADAR_CLASSIFIER_MODEL, see radar/ingest/lora_classifier.py)
   3. LLM zero-shot (cheap model) when the first two are not confident
 Returns a label plus a confidence and which tier decided, so the evaluation can compare tiers on cost and F1.
 """
@@ -83,17 +83,43 @@ def classify_rules(title: str, summary: str = "") -> Classification:
     return Classification(topic, juris, urgency, detect_language(title + " " + summary), conf, "rules")
 
 
-def classify(title: str, summary: str = "", llm=None) -> Classification:
-    """Tiered classification. `llm` is an optional callable(prompt)->str for the zero-shot fallback."""
+def classify(title: str, summary: str = "", llm=None, lora=None, lora_min_confidence: float | None = None) -> Classification:
+    """Tiered classification, cheapest first:
+
+      1. rules      - free; trusted when a keyword matched clearly (confidence >= 0.6)
+      2. lora       - the fine-tuned encoder, if configured; trusted above `lora_min_confidence`
+      3. llm        - `llm` is an optional callable(prompt) -> str for whatever is still uncertain
+    Falls back to the best earlier guess if a later tier is unavailable or fails.
+    """
     c = classify_rules(title, summary)
-    if c.confidence >= 0.6 or llm is None:
+    if c.confidence >= 0.6:
         return c
-    try:
-        topics = ", ".join(t.value for t in Topic)
-        ans = llm(f"Classify this regulatory/news item into exactly one topic from [{topics}]. Reply with the topic id only.\nTitle: {title}\nSummary: {summary[:800]}")
-        t = ans.strip().lower().split()[0].strip(".,'\"")
-        if t in {x.value for x in Topic}:
-            return Classification(Topic(t), c.jurisdiction, c.urgency, c.language, 0.7, "llm")
-    except Exception:
-        pass
-    return c
+    best = c
+    if lora is None:
+        from radar.ingest import lora_classifier
+
+        lora = lora_classifier.get()
+    if lora is not None:
+        from radar.config import settings
+
+        thr = settings.classifier_lora_min_confidence if lora_min_confidence is None else lora_min_confidence
+        try:
+            label, conf = lora.predict([title])[0]
+            guess = Classification(Topic(label), c.jurisdiction, c.urgency, c.language, conf, "lora")
+            if conf >= thr:
+                return guess
+            best = guess
+        except Exception:
+            pass
+    if llm is not None:
+        try:
+            topics = ", ".join(t.value for t in Topic)
+            prompt = "\n".join([f"Classify this regulatory/news item into exactly one topic from [{topics}]. Reply with the topic id only.",
+                                f"Title: {title}", f"Summary: {summary[:800]}"])
+            ans = llm(prompt)
+            t = ans.strip().lower().split()[0].strip(".,'\"")
+            if t in {x.value for x in Topic}:
+                return Classification(Topic(t), c.jurisdiction, c.urgency, c.language, 0.7, "llm")
+        except Exception:
+            pass
+    return best

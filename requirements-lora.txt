@@ -1,0 +1,7 @@
+# Optional: enables the fine-tuned LoRA classifier tier (RADAR_CLASSIFIER_MODEL=models/event-classifier-lora).
+# CPU wheels are enough for inference:  pip install torch --index-url https://download.pytorch.org/whl/cpu
+torch>=2.2
+transformers>=4.44
+peft>=0.12
+sentencepiece
+protobuf

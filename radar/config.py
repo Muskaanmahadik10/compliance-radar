@@ -58,6 +58,9 @@ class Settings(BaseSettings):
 
     # ingestion
     feed_poll_seconds: int = 300
+    # Optional fine-tuned classifier tier: adapter folder or Hugging Face repo id ("" = off). Needs requirements-lora.txt.
+    classifier_model: str = ""
+    classifier_lora_min_confidence: float = 0.8
     allowed_fetch_domains: list[str] = ["eur-lex.europa.eu", "www.federalregister.gov", "www.moea.gov.tw", "www.bsmi.gov.tw"]
 
     data_dir: Path = DATA_DIR

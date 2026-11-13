@@ -9,3 +9,4 @@ __pycache__/
 artifacts/traces/
 data/generated/
 .local-test/
+colab/colab results/

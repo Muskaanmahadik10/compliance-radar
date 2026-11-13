@@ -16,7 +16,7 @@ A manufacturer with thousands of suppliers has to react to a steady stream of ch
  feeds (EUR-Lex, ECHA, Federal Register, news, replay fixture)
         │ pollers
         ▼
-   Redis Stream  ──►  worker: dedupe (id + MinHash LSH) · language · classify (rules → LLM fallback → LoRA)
+   Redis Stream  ──►  worker: dedupe (id + MinHash LSH) · language · classify (rules → LoRA → LLM)
                               │ relevant event
                               ▼
    LangGraph pipeline (durable checkpoints)
@@ -47,13 +47,19 @@ All numbers are produced by scripts in `evaluation/` and stored in `artifacts/`.
 
 Reading: on easy questions everything works, which is why the harder set exists. Fusion widens what is found (hit@5), reranking puts the right passage first (hit@1 +12 points over dense, +36 over BM25) at the price of latency.
 
-### Event classification: rules vs LLM fallback (52 hand-written headlines, 13 topics)
+### Event classification: three tiers, cheapest first (52 hand-written headlines, 13 topics)
 
-| Tier | Accuracy | Macro-F1 | Cost for 52 headlines |
-|---|---|---|---|
-| Keyword rules | 0.60 | 0.62 | $0 |
-| **Rules, LLM decides low-confidence items** | **0.94** | **0.94** | $0.0007 (24 LLM calls) |
-| LoRA fine-tuned encoder (`colab/train_classifier.ipynb`) | run the notebook | | $0 at inference |
+| Tier | Accuracy | Macro-F1 | LLM calls | Cost for 52 headlines |
+|---|---|---|---|---|
+| Keyword rules | 0.60 | 0.62 | 0 | $0 |
+| LoRA encoder alone (xlm-roberta-base, 0.43% of weights trained) | 0.81 | 0.80 | 0 | $0, 38 ms per headline on CPU |
+| Rules → LoRA | 0.87 | 0.86 | 0 | $0 |
+| Rules → LLM | 0.92 | 0.92 | 24 | $0.00066 |
+| **Rules → LoRA → LLM** | **0.94** | **0.94** | **5** | **$0.00014** |
+
+Reading: the fine-tuned encoder does not beat the LLM on its own, and that is not its job. As the middle tier it answers the 19 headlines it is confident about (probability ≥ 0.8), so only 5 of 52 reach the LLM instead of 24: **79% fewer LLM calls at the same accuracy**. With no LLM at all, rules → LoRA still reaches 0.87.
+
+How it was built: a strong LLM wrote 780 varied headlines (60 per topic; `scripts/make_classifier_dataset.py`, about $0.01), the encoder was fine-tuned with LoRA on a Colab T4 (`colab/train_classifier.ipynb`), and the adapter (4.7 MB, `models/event-classifier-lora/`) is loaded by `radar/ingest/lora_classifier.py` when `RADAR_CLASSIFIER_MODEL` is set. The 52 test headlines were written by hand and never shown to the generator. With 4 examples per topic the per-topic numbers are indicative only; PFAS is the weak spot (the encoder confuses it with REACH), and the LLM tier is what catches those.
 
 ### Impact briefs (11 events, ground truth written by hand in `evaluation/briefs.py`)
 
@@ -92,7 +98,7 @@ The mock-model run (`artifacts/brief_eval_mock.json`, part of CI) passes 11 / 11
 | **Two runtime modes behind one interface** (embedded Qdrant + fakeredis + SQLite, or real services). | Anyone can run it in a minute; CI runs both, the second against real Qdrant, Redis and Postgres containers. |
 | **Local embeddings, BM25 and reranker (ONNX).** | Company documents never leave the machine for retrieval; only selected passages reach the LLM, after PII masking. |
 | **Retry policy that reads the provider's answer, plus model fallback.** Per-minute limits are waited out; a daily quota that clears in half an hour is not, and the request goes to the smaller model, which is recorded on the brief. Oversized requests are never retried. | Found the hard way: retrying a daily-quota error three times cost 85 seconds per brief and produced nothing. |
-| **Mock chat model implementing the LangChain interface.** | 33 tests and the mock evaluation need no key, so prompt-format and schema bugs fail in CI. |
+| **Mock chat model implementing the LangChain interface.** | 34 tests and the mock evaluation need no key, so prompt-format and schema bugs fail in CI. |
 
 ## Quick start
 
@@ -100,7 +106,7 @@ The mock-model run (`artifacts/brief_eval_mock.json`, part of CI) passes 11 / 11
 python -m venv .venv && .venv/Scripts/activate        # source .venv/bin/activate on Linux/macOS
 pip install -r requirements.txt
 make data index       # generate the demo company (200 suppliers, 715 parts, 20 products, 52 documents) and index it
-make test             # 33 tests, offline
+make test             # 34 tests, offline
 streamlit run ui/app.py
 ```
 
@@ -109,6 +115,8 @@ In the UI: **Live events → Poll feeds (replay) → Draft brief → Briefs → 
 Real models: copy `.env.example` to `.env`, set `RADAR_LLM_PROVIDER=openai_compatible` (Groq, OpenAI, Ollama, vLLM) or `anthropic` and the key. Real services: `docker compose up --build` (Qdrant, Redis, Postgres, Langfuse, API, worker, UI).
 
 Evaluations: `python -m evaluation.retrieval` · `python -m evaluation.classifier` · `python -m evaluation.briefs --provider env`.
+
+Fine-tuned classifier tier (optional): `pip install torch --index-url https://download.pytorch.org/whl/cpu && pip install -r requirements-lora.txt`, then set `RADAR_CLASSIFIER_MODEL=models/event-classifier-lora`.
 
 MCP: `python -m radar.mcp_server` exposes search, supplier and BOM lookup, events and brief drafting to Claude Desktop / Claude Code. There is deliberately no tool to approve a brief.
 
@@ -120,7 +128,7 @@ radar/
   data/                     schemas (pydantic), synthetic company generator, material aliases
   db/                       SQLAlchemy tables: suppliers, parts, BOM, documents, events, briefs, tasks, audit log
   retrieval/                chunking with section citations, Qdrant hybrid store, reranker, ingestion
-  ingest/                   feed pollers, Redis Streams worker, MinHash dedupe, tiered classifier
+  ingest/                   feed pollers, Redis Streams worker, MinHash dedupe, tiered classifier (rules, LoRA, LLM)
   llm/                      model router, cost ledger (LangChain callback), structured-call retries, mock model
   tools/                    schema-validated, permission-tagged tools with injection redaction
   agent/                    LangGraph pipeline, prompts, service (start / decide / read)
@@ -129,8 +137,9 @@ radar/
 ui/app.py                   Streamlit: events, briefs, chat, documents, metrics
 evaluation/                 retrieval, classifier and brief evaluations
 colab/train_classifier.ipynb   LoRA fine-tuning of the event classifier
+models/event-classifier-lora/  the trained adapter and its label mapping
 docs/                       DESIGN.md (the plan this was built from), INTERVIEW_NOTES.md
-tests/                      33 tests
+tests/                      34 tests
 ```
 
 ## Honest notes

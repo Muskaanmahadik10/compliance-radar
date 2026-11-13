@@ -51,3 +51,39 @@ def test_worker_end_to_end_in_streams():
     publish(load_replay())
     again = process_available(Deduper())
     assert again["stored"] == 0 and again["duplicates"] == 13
+
+
+def test_tiered_classifier_uses_lora_then_llm():
+    """Chain logic with stand-ins: no torch or provider needed."""
+    from radar.ingest.classify import classify
+
+    class FakeLora:
+        def __init__(self, label, conf):
+            self.label, self.conf, self.calls = label, conf, 0
+
+        def predict(self, titles):
+            self.calls += 1
+            return [(self.label, self.conf)]
+
+    llm_calls = []
+
+    def llm(prompt):
+        llm_calls.append(prompt)
+        return "battery"
+
+    vague = "Lawmakers confirm new targets for rechargeable cells in consumer devices"  # no keyword: rules are unsure
+    assert classify_rules(vague).confidence < 0.6
+    # confident LoRA answers and the LLM is never called
+    sure = FakeLora("battery", 0.95)
+    c = classify(vague, llm=llm, lora=sure, lora_min_confidence=0.8)
+    assert (c.topic, c.tier) == (Topic.BATTERY, "lora") and not llm_calls and sure.calls == 1
+    # unsure LoRA defers to the LLM
+    c = classify(vague, llm=llm, lora=FakeLora("packaging", 0.4), lora_min_confidence=0.8)
+    assert (c.topic, c.tier) == (Topic.BATTERY, "llm") and len(llm_calls) == 1
+    # unsure LoRA and no LLM: its guess still beats 'other'
+    c = classify(vague, llm=None, lora=FakeLora("packaging", 0.4), lora_min_confidence=0.8)
+    assert (c.topic, c.tier) == (Topic.PACKAGING, "lora")
+    # a clear keyword never reaches the later tiers
+    sure2 = FakeLora("other", 0.99)
+    c = classify("BIS adds entities to the Entity List under export control rules", llm=llm, lora=sure2)
+    assert c.tier == "rules" and sure2.calls == 0

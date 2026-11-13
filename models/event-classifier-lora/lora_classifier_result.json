@@ -1,0 +1,8 @@
+{
+  "tier": "lora (xlm-roberta-base, r=16)",
+  "n": 52,
+  "accuracy": 0.808,
+  "macro_f1": 0.8,
+  "train_rows": 702,
+  "cost_usd_per_1k_events": 0.0
+}

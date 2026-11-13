@@ -14,6 +14,7 @@
     "supplier_incident",
     "other"
   ],
+  "n": 52,
   "results": [
     {
       "tier": "rules",
@@ -26,21 +27,73 @@
         "battery->other x3",
         "cybersecurity->other x3"
       ],
-      "cost_usd": 0.0
+      "cost_usd": 0.0,
+      "llm_calls": 0
     },
     {
-      "tier": "rules + LLM fallback",
+      "tier": "LoRA encoder alone",
       "n": 52,
-      "accuracy": 0.942,
-      "macro_f1": 0.943,
+      "accuracy": 0.808,
+      "macro_f1": 0.8,
+      "top_confusions": [
+        "pfas->reach_svhc x2",
+        "pfas->packaging x1",
+        "rohs->reach_svhc x1",
+        "reach_svhc->data_protection x1"
+      ],
+      "cost_usd": 0.0,
+      "llm_calls": 0,
+      "ms_per_headline_cpu": 37.9
+    },
+    {
+      "tier": "rules -> LoRA (no LLM, threshold 0.8)",
+      "n": 52,
+      "accuracy": 0.865,
+      "macro_f1": 0.861,
+      "top_confusions": [
+        "pfas->reach_svhc x1",
+        "pfas->packaging x1",
+        "reach_svhc->data_protection x1",
+        "rba_labour->supplier_incident x1"
+      ],
+      "cost_usd": 0.0,
+      "llm_calls": 0
+    },
+    {
+      "tier": "rules -> LLM",
+      "n": 52,
+      "accuracy": 0.923,
+      "macro_f1": 0.92,
       "top_confusions": [
         "rohs->other x1",
+        "rohs->reach_svhc x1",
         "rba_labour->conflict_minerals x1",
         "battery->conflict_minerals x1"
       ],
-      "cost_usd": 0.00067,
+      "cost_usd": 0.00066,
       "llm_calls": 24,
-      "decided_by_llm": 24
+      "decided_by": {
+        "rules": 28,
+        "llm": 24
+      }
+    },
+    {
+      "tier": "rules -> LoRA -> LLM (threshold 0.8)",
+      "n": 52,
+      "accuracy": 0.942,
+      "macro_f1": 0.941,
+      "top_confusions": [
+        "rba_labour->supplier_incident x1",
+        "battery->conflict_minerals x1",
+        "packaging->other x1"
+      ],
+      "cost_usd": 0.00014,
+      "llm_calls": 5,
+      "decided_by": {
+        "rules": 28,
+        "llm": 5,
+        "lora": 19
+      }
     }
   ]
 }

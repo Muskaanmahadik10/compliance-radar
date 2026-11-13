@@ -11,9 +11,10 @@ Usage: python -m evaluation.classifier
 from __future__ import annotations
 
 import json
+import time
 from collections import Counter
 
-from radar.config import ARTIFACTS_DIR, DATA_DIR
+from radar.config import ARTIFACTS_DIR, DATA_DIR, settings
 from radar.data.schemas import Topic
 from radar.ingest.classify import classify, classify_rules
 from radar.llm import CostLedger, get_router
@@ -46,24 +47,49 @@ def _row(name: str, y: list[str], pred: list[str], extra: dict | None = None) ->
 def run() -> dict:
     data = load()
     y = [d["topic"] for d in data]
-    rows = [_row("rules", y, [classify_rules(d["title"]).topic.value for d in data], {"cost_usd": 0.0})]
+    titles = [d["title"] for d in data]
+    rows = [_row("rules", y, [classify_rules(t).topic.value for t in titles], {"cost_usd": 0.0, "llm_calls": 0})]
+
+    # Fine-tuned tier, if the adapter and its libraries are available (RADAR_CLASSIFIER_MODEL).
+    from radar.ingest import lora_classifier
+
+    lora = lora_classifier.get()
+    if lora is not None:
+        t0 = time.perf_counter()
+        preds = lora.predict(titles)
+        ms = (time.perf_counter() - t0) * 1000 / len(titles)
+        rows.append(_row("LoRA encoder alone", y, [p for p, _ in preds], {"cost_usd": 0.0, "llm_calls": 0, "ms_per_headline_cpu": round(ms, 1)}))
+        thr = settings.classifier_lora_min_confidence
+        chain = [classify(t, lora=lora, lora_min_confidence=thr) for t in titles]
+        rows.append(_row(f"rules -> LoRA (no LLM, threshold {thr})", y, [c.topic.value for c in chain], {"cost_usd": 0.0, "llm_calls": 0}))
+
     router = get_router()
     if router.cheap._llm_type != "mock":
-        ledger = CostLedger()
+        def run_chain(name: str, use_lora):
+            ledger = CostLedger()
 
-        def llm(prompt: str) -> str:
-            return str(router.cheap.invoke(prompt, config={"callbacks": [ledger]}).content)
+            def llm(prompt: str) -> str:
+                return str(router.cheap.invoke(prompt, config={"callbacks": [ledger]}).content)
 
-        preds, used = [], 0
-        for d in data:
-            c = classify(d["title"], llm=llm)
-            used += c.tier == "llm"
-            preds.append(c.topic.value)
-        rows.append(_row("rules + LLM fallback", y, preds, {"cost_usd": round(ledger.cost_usd, 5), "llm_calls": ledger.calls, "decided_by_llm": used}))
-    out = {"labels": [t.value for t in Topic], "results": rows}
+            # _Off() disables the tier explicitly (passing None would auto-load a configured adapter)
+            out = [classify(t, llm=llm, lora=use_lora if use_lora is not None else _Off()) for t in titles]
+            tiers = Counter(c.tier for c in out)
+            rows.append(_row(name, y, [c.topic.value for c in out], {"cost_usd": round(ledger.cost_usd, 5), "llm_calls": ledger.calls, "decided_by": dict(tiers)}))
+
+        run_chain("rules -> LLM", None)
+        if lora is not None:
+            run_chain(f"rules -> LoRA -> LLM (threshold {settings.classifier_lora_min_confidence})", lora)
+    out = {"labels": [t.value for t in Topic], "n": len(data), "results": rows}
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     (ARTIFACTS_DIR / "classifier_eval.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
     return out
+
+
+class _Off:
+    """Stand-in that makes the LoRA tier abstain, so 'rules -> LLM' can be measured even when an adapter is configured."""
+
+    def predict(self, titles):
+        raise RuntimeError("LoRA tier disabled for this measurement")  # classify() treats a failing tier as absent
 
 
 if __name__ == "__main__":
