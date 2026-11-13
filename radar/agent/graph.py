@@ -242,7 +242,8 @@ def _fallback_draft(state: BriefState, error: str) -> dict:
             "confidence": 0.2, "open_questions": ["Automatic drafting failed; analyst review required."], "citations": cites or [{"doc_id": "POL-GOV-012", "section": "2 Impact assessment", "quote": ""}]}
 
 
-_COUNT_CLAIM = re.compile(r"(?<![\w.])(\d[\d,]*)\s+(affected\s+|impacted\s+|tier[- ]?1\s+|direct\s+)?(suppliers?|parts?|products?)\b", re.I)
+_HYPHENS = dict.fromkeys(map(ord, "‐‑‒–—−"), "-")  # models write "tier-1" with a non-breaking hyphen
+_COUNT_CLAIM = re.compile(r"(?<![\w.-])(\d[\d,]*)\s+(affected\s+|impacted\s+|tier[- ]?1\s+|direct\s+)?(suppliers?|parts?|products?)\b", re.I)
 _COUNT_KEY = {"supplier": "suppliers", "part": "parts", "product": "products"}
 # Codes whose presence makes automatic approval false, whatever the critic says.
 STRUCTURAL = {"uncited_action", "no_valid_citation", "count_mismatch"}
@@ -253,7 +254,8 @@ def count_claims(summary: str, counts: dict) -> list[str]:
     Phrases about a subset ("top 8 suppliers", "8 of the 23 suppliers", "the first 3 parts") and qualitative wording
     ("several suppliers") are not treated as totals."""
     wrong = []
-    for m in _COUNT_CLAIM.finditer(summary or ""):
+    summary = (summary or "").translate(_HYPHENS)
+    for m in _COUNT_CLAIM.finditer(summary):
         before = summary[max(0, m.start() - 12): m.start()].lower()
         after = summary[m.end(): m.end() + 4].lower()
         if any(w in before for w in ("top ", "first ", "highest", "priority", "listed")) or after.startswith(" of"):
@@ -379,7 +381,8 @@ def verify(state: BriefState, config: RunnableConfig) -> dict:
     verdict["structural_failures"] = structural
     verdict["approved"] = bool(verdict["approved"]) and not structural
     attempt = {"attempt": len(state.get("attempts") or []), "removed": sum(c["removed"] for c in checks), "codes": sorted({c["code"] for c in checks}),
-               "structural_ok": not structural, "critic_ran": verdict["critic_ran"], "critic_approved": verdict.get("critic_approved")}
+               "structural_ok": not structural, "critic_ran": verdict["critic_ran"], "critic_approved": verdict.get("critic_approved"),
+               "findings": [c["detail"][:200] for c in checks if c["code"] != "name_corrected"], "critic_notes": verdict.get("missing_citations", [])[:4]}
     return {"draft": d, "auto_findings": findings, "verdict": verdict, "attempts": [attempt], "revisions": state.get("revisions", 0) + (0 if verdict["approved"] else 1),
             "injection_findings": list(run_context(config).tools.injection_findings)}
 

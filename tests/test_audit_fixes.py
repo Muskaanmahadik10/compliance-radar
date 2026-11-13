@@ -265,6 +265,12 @@ def test_summary_totals_must_match_sql():
     assert count_claims("PFAS rules affect 23 suppliers, 11 parts and 4 products; 5 tier-1 suppliers.", counts) == []
     assert count_claims("The top 8 suppliers are listed; 8 of the 23 suppliers have contracts. Several suppliers...", counts) == []
     assert len(count_claims("999 suppliers are affected", counts)) == 1
+    # Real-model regression (14 Nov run): "tier‑1" with a non-breaking hyphen was misread as "1 suppliers",
+    # and the real error (8 vs 11 tier-1 suppliers) was missed.
+    nb = "18 suppliers are impacted (including 8 tier‑1 suppliers)."
+    assert count_claims(nb, {"suppliers": 18, "tier1_suppliers": 11}) == ["summary says '8 tier-1 suppliers' but the SQL total is 11"]
+    assert count_claims(nb.replace("8 tier", "11 tier"), {"suppliers": 18, "tier1_suppliers": 11}) == []
+    assert count_claims("lead in high‑melting solders for categories 1‑7; 23 suppliers", {"suppliers": 23}) == []
     out = _run_verify(_verify_state(summary="999 suppliers are affected."), "t-ap02")
     assert out["verdict"]["approved"] is False and not out["verdict"]["structural_ok"]
     assert any("999 suppliers" in f for f in out["verdict"]["structural_failures"])
