@@ -45,7 +45,7 @@ def test_worker_end_to_end_in_streams():
     assert stats["relevant"] == 11  # all but the earnings item
     with eng.connect() as c:
         rows = c.execute(select(events.c.topic, events.c.status)).all()
-    assert len(rows) == 12 and sum(1 for _, s in rows if s == "ignored") == 1
+    assert len(rows) == 12 and [s for _, s in rows].count("triage") == 1  # the earnings item: no keyword, no later tier -> unresolved, kept for triage
     assert r.xlen(CLASSIFIED_STREAM) == 11
     # re-publishing the same items is idempotent
     publish(load_replay())

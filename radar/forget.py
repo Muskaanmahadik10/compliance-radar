@@ -13,7 +13,8 @@ The procedure:
                  the audit log and on disk.
 
 What this is not: the checks are a record of what was observed when the erasure ran, not a proof that the content can
-no longer influence anything. Briefs, tasks and graph checkpoints that quoted the document are listed, not redacted;
+no longer influence anything. Briefs whose citations name the document are listed (not redacted); tasks, graph
+checkpoints and other derived copies are neither listed nor removed;
 browser chat history, backups and copies in other containers' filesystems are out of scope. Equivalent wording in
 another document can still produce the same answer. The signature shows the certificate was not altered by someone
 without the key; with the public demo key (no RADAR_SIGNING_KEY) it shows nothing about who issued it, and the
@@ -174,7 +175,8 @@ def forget_document(doc_id: str, requested_by: str, reason: str = "erasure reque
         "probes": len(probes), "retrieved_before": before, "retrieved_after": after, "answers_citing_after": cited_after,
         "briefs_citing_document": citing, "chat_models_used_for_probe_answers": get_router().names, "checks": checks, "verified": all(checks.values()),
         "scope_note": ("Retrieval erasure with recorded checks. Removed: vector chunks, local source copies; SQL row kept as 'deleted' with its title; "
-                       "tombstone blocks re-ingestion. Not removed: briefs, tasks and checkpoints that quote it (listed above), browser chat history, "
+                       "tombstone blocks re-ingestion. Not removed: briefs that cite it (their ids are listed above), and tasks, graph checkpoints "
+                       "and other derived copies (not inventoried), browser chat history, "
                        "backups, copies in other containers. The checks record what was observed at completed_at; they are not a proof of zero influence."),
         "signature_key_id": key_id,
         "signature_meaning": ("integrity only: signed with the public demo key, so anyone can produce this signature" if key_id == DEMO_KEY_ID

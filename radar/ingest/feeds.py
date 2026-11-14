@@ -6,6 +6,7 @@ A 'replay' source reads a local JSONL fixture so demos, tests and CI are determi
 
 from __future__ import annotations
 
+import email.utils
 import hashlib
 import json
 import logging
@@ -35,6 +36,30 @@ RSS_SOURCES = {
 
 def _event_id(source: str, url: str, title: str) -> str:
     return hashlib.sha1(f"{source}|{url or title}".encode()).hexdigest()[:16]
+
+
+def normalize_timestamp(value) -> tuple[str, bool]:
+    """Any feed timestamp -> (ISO-8601 in UTC, parsed). RSS uses RFC 822 ("Fri, 13 Nov 2026 09:00:00 GMT"), Atom and the
+    replay fixture use ISO 8601; stored as raw strings they sort alphabetically, not by time. A naive time is taken as
+    UTC. Missing or unparseable values fall back to the ingestion time, with parsed=False so the caller can record it."""
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        text = str(value or "").strip()
+        dt = None
+        if text:
+            try:
+                dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            except ValueError:
+                try:
+                    dt = email.utils.parsedate_to_datetime(text)
+                except (TypeError, ValueError, IndexError):
+                    dt = None
+        if dt is None:
+            return datetime.now(UTC).isoformat(timespec="seconds"), False
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC).isoformat(timespec="seconds"), True
 
 
 def fetch_rss(source: str, url: str, timeout: float = 20.0) -> list[dict]:

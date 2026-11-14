@@ -282,7 +282,7 @@ _HYPHENS = dict.fromkeys(map(ord, "‐‑‒–—−"), "-")  # models write "t
 _COUNT_CLAIM = re.compile(r"(?<![\w.-])(\d[\d,]*)\s+(affected\s+|impacted\s+|tier[- ]?1\s+|direct\s+)?(suppliers?|parts?|products?)\b", re.I)
 _COUNT_KEY = {"supplier": "suppliers", "part": "parts", "product": "products"}
 # Codes whose presence makes automatic approval false, whatever the critic says.
-STRUCTURAL = {"uncited_action", "no_valid_citation", "count_mismatch", "partial_review"}
+STRUCTURAL = {"uncited_action", "no_valid_citation", "count_mismatch", "partial_review", "impact_incomplete"}
 CRITIC_DRAFT_CHARS = 6000  # with the evidence block this keeps a critic request inside an 8k-token provider limit
 CRITIC_PASSAGES = 12
 
@@ -301,18 +301,16 @@ def critic_view(d: dict, counts: dict, evidence: list[dict]) -> tuple[str, str, 
             "affected": [{"kind": a["kind"], "id": a["id"], "name": a["name"], "why": a["why"], "citations": ids(a.get("citations"))} for a in d.get("affected", [])],
             "citations": ids(d.get("citations")), "open_questions": d.get("open_questions", [])}
     text = json.dumps(view, ensure_ascii=False)
-    for cut in (200, 120, 60):  # shorten free text, never drop an item
+    for cut in (200, 120, 60):  # shorten explanations, never an action (the obligations under review) and never drop an item
         if len(text) <= CRITIC_DRAFT_CHARS:
             break
         for a in view["affected"]:
             a["why"] = a["why"][:cut]
-        for a in view["actions"]:
-            a["action"] = a["action"][: cut * 2]
         view["open_questions"] = [q[:cut] for q in view["open_questions"]]
         text = json.dumps(view, ensure_ascii=False)
     gaps = []
     if len(text) > CRITIC_DRAFT_CHARS:
-        gaps.append(f"draft too long for a complete critic review ({len(text)} > {CRITIC_DRAFT_CHARS} characters after shortening); later items were not reviewed")
+        gaps.append(f"draft too long for a complete critic review ({len(text)} > {CRITIC_DRAFT_CHARS} characters with every action in full); not every action was reviewed")
         text = text[:CRITIC_DRAFT_CHARS] + " ...[CUT: review incomplete]"
     cited = {c for a in [*d.get("actions", []), *d.get("affected", [])] for c in ids(a.get("citations"))} | set(ids(d.get("citations")))
     evidence_text, shown = _fmt_evidence(evidence, limit=CRITIC_PASSAGES, first=cited)
@@ -425,6 +423,8 @@ def verify(state: BriefState, config: RunnableConfig) -> dict:
             note("uncited_action", f"action without a valid citation: {act['action'][:80]}")
     if not d.get("citations"):
         note("no_valid_citation", "brief has no valid citations")
+    if state.get("impact_complete") is False:
+        note("impact_incomplete", "the SQL impact lookup stopped at its page limit: the totals are lower bounds, not exact; review the full impact manually")
     for w in count_claims(d.get("summary", ""), state.get("counts") or {}):
         note("count_mismatch", w)
     if run_context(config).tools.injection_findings:
@@ -455,7 +455,8 @@ def verify(state: BriefState, config: RunnableConfig) -> dict:
     # Structural failures are not the critic's to wave through.
     verdict["structural_ok"] = not structural
     verdict["structural_failures"] = structural
-    verdict["review_complete"] = not gaps
+    verdict["review_complete"] = not gaps  # every action and item in full, and every cited passage (as an excerpt)
+    verdict["evidence_excerpt_chars"] = 480  # cited passages reach the critic as their first 480 characters
     verdict["approved"] = bool(verdict["approved"]) and not structural
     attempt = {"attempt": len(state.get("attempts") or []), "removed": sum(c["removed"] for c in checks), "codes": sorted({c["code"] for c in checks}),
                "structural_ok": not structural, "critic_ran": verdict["critic_ran"], "critic_approved": verdict.get("critic_approved"),

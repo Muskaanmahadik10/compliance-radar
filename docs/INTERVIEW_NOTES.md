@@ -37,6 +37,8 @@ What I deliberately did *not* fix, and say so: authentication, pending-message r
 | CR-09 capped totals | Supplier/part lists were capped at 100/200 and the totals counted the capped lists. | Paginated lookups with exact SQL totals; completeness recorded with the brief. |
 | Smaller | Migration marked done before it committed; retrieval eval accepted section `10` for gold `1`; `--provider` only labelled the output file. | All fixed; the provider label is now checked against the configured model. |
 
+**Third audit (independent, of `b91c1dc`).** It reproduced the 74 tests, the retrieval ablation and the adapter's 42/52 on CPU, then found narrower gaps that I fixed (`tests/test_independent_audit_fixes.py`): the critic view still shortened long actions while saying "complete" (now actions are never shortened; if they don't fit, review is partial); a phone followed by a date swallowed the date and part of `2023/1542` (dates are now set aside before phone matching); RSS dates were stored as strings and sorted alphabetically (now UTC ISO); unresolved classifications were routed like confident ones (now a visible `triage` status); MCP results bypassed masking; the certificate wording overstated its inventory.
+
 Not changed on purpose: the classifier's acceptance rule (CR-08). A headline about "strike prices" is a confident supplier incident. Fixing that would change a decision on the test set I developed against, so it needs a new frozen test set first. I did fix the jurisdiction word boundaries and mark unconfident results as unresolved.
 
 ## Design decisions and the questions they answer
@@ -57,7 +59,7 @@ Not changed on purpose: the classifier's acceptance rule (CR-08). A headline abo
 | Prompt injection? | Retrieved text is treated as data: instruction-like passages are redacted, `web_fetch` is allow-listed, and there's no tool to approve a brief. Limits: the redaction is pattern-based, and tool permission labels aren't enforced at dispatch. |
 | What does erasure mean here? | Retrieval erasure with recorded checks: tombstone first, vector chunks and local source copies deleted, then checks that probes built from the document's own wording no longer retrieve it and answers don't cite it. It's a record of checks at a point in time, not proof of zero influence. Briefs that quoted it are listed, not redacted. No model here was trained on the documents, so unlearning, my thesis topic, isn't needed for this case. |
 | Why synthetic company data? | Real supplier masters are confidential, and evaluation needs ground truth ("this event affects exactly these suppliers"). Feeds are real public sources; a replay fixture makes tests deterministic. |
-| How do you test LLM code in CI? | A deterministic mock implements the LangChain interface, including structured output, so 74 tests and the mock evaluation run with no key. A second CI job runs the same tests against real Qdrant, Redis and Postgres containers. The mock critic always approves, so mock results check plumbing, not quality. |
+| How do you test LLM code in CI? | A deterministic mock implements the LangChain interface, including structured output, so 89 tests and the mock evaluation run with no key. A second CI job runs the same tests against real Qdrant, Redis and Postgres containers. The mock critic always approves, so mock results check plumbing, not quality. |
 
 ## What I would do next
 

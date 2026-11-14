@@ -86,15 +86,17 @@ with tab_events:
         m1.metric("Events stored", len(evs))
         m2.metric("Relevant", len(relevant))
         m3.metric("High urgency", sum(e["urgency"] == "high" for e in relevant))
-        m4.metric("Awaiting brief", sum(e["status"] == "new" for e in relevant))
+        m4.metric("Awaiting brief / triage", f"{sum(e['status'] == 'new' for e in relevant)} / {sum(e['status'] == 'triage' for e in relevant)}")
         for e in relevant:
             with st.container(border=True):
                 a, b = st.columns([5, 1])
                 raw = e.get("raw") or {}
                 tier = raw.get("classifier", "?") + (f" ({raw['classifier_llm']})" if raw.get("classifier_llm") else "")
-                a.markdown(f"**{e['title']}**  \n{URGENCY[e['urgency']]} · `{e['topic']}` · {e['jurisdiction']} · {e['source']} · {e['published'][:10]} · status `{e['status']}` · classified by {tier}")
+                a.markdown(f"**{e['title']}**  \n{URGENCY[e['urgency']]} · `{e['topic']}` · {e['jurisdiction']} · {e['source']} · {e['published'][:10]} · status `{e['status']}` · classified by {tier} ({raw.get('confidence', 0):.2f}, a heuristic score)")
                 a.caption(e["summary"][:300])
-                if e["status"] == "new" and b.button("Draft brief", key=f"b{e['event_id']}", type="primary"):
+                if e["status"] == "triage":
+                    a.warning(f"Unresolved topic: `{e['topic']}` is a low-confidence guess and no later classifier tier was available. Check the topic before drafting.")
+                if e["status"] in ("new", "triage") and b.button("Draft brief" if e["status"] == "new" else "Draft anyway", key=f"b{e['event_id']}", type="primary" if e["status"] == "new" else "secondary"):
                     with st.spinner("Researching, mapping impact, drafting, verifying..."):
                         res = service.start_brief(e["event_id"])
                     st.session_state["open_brief"] = res["brief_id"]

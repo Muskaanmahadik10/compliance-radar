@@ -1,5 +1,7 @@
 """MCP server: the same tools and services over stdio, so Claude Desktop, Claude Code or any MCP client can use them.
 Approval stays with people: there is deliberately no tool to approve a brief.
+Every result is passed through the same e-mail/phone masking as model-bound text (radar/privacy.py), because an MCP
+client may itself send it to a hosted model. Originals stay in the local database and UI.
 
 Run: python -m radar.mcp_server
 Claude Desktop config: {"mcpServers": {"compliance-radar": {"command": "<repo>/.venv/Scripts/python", "args": ["-m", "radar.mcp_server"], "cwd": "<repo>"}}}
@@ -14,6 +16,7 @@ from sqlalchemy import select
 
 from radar.db.schema import events
 from radar.infra import get_db_engine
+from radar.privacy import redact_pii
 from radar.tools import ToolContext, call_tool
 
 mcp = MCPServer("compliance-radar")
@@ -21,7 +24,7 @@ _ctx = ToolContext(actor="mcp")
 
 
 def _j(obj) -> str:
-    return json.dumps(obj, ensure_ascii=False, default=str)
+    return redact_pii(json.dumps(obj, ensure_ascii=False, default=str))[0]
 
 
 @mcp.tool()

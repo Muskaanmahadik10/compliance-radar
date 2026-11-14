@@ -16,7 +16,6 @@ import json
 import logging
 import re
 import time
-from datetime import UTC, datetime
 
 from datasketch import MinHash, MinHashLSH
 from sqlalchemy import insert, select
@@ -26,7 +25,7 @@ from radar.db import create_all
 from radar.db.schema import events
 from radar.infra import get_db_engine, get_redis
 from radar.ingest.classify import classify, llm_callback
-from radar.ingest.feeds import RAW_STREAM
+from radar.ingest.feeds import RAW_STREAM, normalize_timestamp
 
 log = logging.getLogger(__name__)
 CLASSIFIED_STREAM = "events:classified"
@@ -117,14 +116,21 @@ def process_available(deduper: Deduper | None = None, llm=_AUTO, max_items: int 
                 r.xack(RAW_STREAM, GROUP, msg_id)
                 continue
             cl = classify(item["title"], item.get("summary", ""), llm=llm)
+            published, parsed = normalize_timestamp(item.get("published"))
+            # An unresolved classification (no tier confident, none after it available) is neither a decision to brief
+            # nor a decision to ignore: it goes to "triage" for a person to confirm the topic.
+            status = "triage" if not cl.resolved else "new" if cl.topic in RELEVANT else "ignored"
             row = {"event_id": item["event_id"], "source": item["source"], "url": item.get("url", ""), "title": item["title"], "summary": item.get("summary", ""),
-                   "published": str(item.get("published", datetime.now(UTC).isoformat())), "jurisdiction": cl.jurisdiction.value, "topic": cl.topic.value,
-                   "urgency": cl.urgency, "language": cl.language, "status": "new" if cl.topic in RELEVANT else "ignored",
-                   "raw": {"classifier": cl.tier, "confidence": cl.confidence, "resolved": cl.resolved, "classifier_llm": llm_name if cl.tier == "llm" else None}}
+                   "published": published, "jurisdiction": cl.jurisdiction.value, "topic": cl.topic.value,
+                   "urgency": cl.urgency, "language": cl.language, "status": status,
+                   "raw": {"classifier": cl.tier, "confidence": cl.confidence, "resolved": cl.resolved, "classifier_llm": llm_name if cl.tier == "llm" else None}
+                   | ({} if parsed else {"published_raw": str(item.get("published", "")), "published_parsed": False})}
             with eng.begin() as c:
                 c.execute(insert(events), [row])
             stats["stored"] += 1
-            if cl.topic in RELEVANT:
+            if status == "triage":
+                stats["triage"] = stats.get("triage", 0) + 1
+            elif cl.topic in RELEVANT:
                 stats["relevant"] += 1
                 r.xadd(CLASSIFIED_STREAM, {"event_id": item["event_id"], "topic": cl.topic.value, "urgency": cl.urgency}, maxlen=10000, approximate=True)
             r.xack(RAW_STREAM, GROUP, msg_id)

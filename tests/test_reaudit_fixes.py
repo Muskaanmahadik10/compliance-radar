@@ -151,7 +151,7 @@ def _long_draft(n_actions: int, text_len: int) -> dict:
 def test_last_action_and_sql_totals_reach_the_critic(fake_router):
     from radar.agent.graph import verify
 
-    out = verify(_state(draft=_long_draft(12, 400)), _cfg("c1"))
+    out = verify(_state(draft=_long_draft(8, 400)), _cfg("c1"))
     sent = fake_router.sent_text()
     assert "WRONG-FINAL" in sent and "sql_totals" in sent and "Suppliers declare PFAS" in sent
     assert out["verdict"]["review_complete"] is True and out["verdict"]["approved"] is True

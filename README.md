@@ -8,15 +8,17 @@ Built with **LangGraph · LangChain · Qdrant (hybrid dense + BM25) · cross-enc
 
 > **How this version came about.** An AI coding assistant built the first version. A second AI (Codex) audited commit `af9dd6b` and found 47 grouped issues. Among them: the LLM classifier tier never ran in live ingestion; erased documents came back on re-index; retrieved passages skipped e-mail/phone masking; dates were masked as phone numbers; and a brief metric measured the final draft while being named "first try". I verified each finding against the code, fixed the ones that affect the results or the demo, and added a regression test for every fix. The original results are kept unchanged in [`artifacts/superseded_af9dd6b/`](artifacts/superseded_af9dd6b/README.md) with an explanation.
 >
-> A second audit of the repaired commit `a92c2bd` (14 Nov) found nine remaining issues. Fixed since, each with a regression test in `tests/test_reaudit_fixes.py` (74 tests in total):
+> A second audit of the repaired commit `a92c2bd` (14 Nov) found nine remaining issues. Fixed since, each with a regression test in `tests/test_reaudit_fixes.py`:
 > - The training notebook used `warmup_ratio`, which transformers 5 rejects. It now pins the stack it was run with and was executed end to end on CPU as a smoke test.
 > - E-mail/phone masking missed some outbound paths (classifier prompt, event JSON, citation headings, revision feedback). It is now applied once, on the final messages, wherever a model is called.
 > - An invented policy or contract id could stay in a brief. Such entries are now removed and listed as open questions.
-> - A long brief could be approved by a critic that never saw its last actions. The critic now gets every action, or the review counts as partial and blocks approval.
+> - A long brief could be approved by a critic that never saw its last actions. The critic now gets every action in full, or the review counts as partial and blocks approval.
 > - Running the brief evaluation reset the app's own state, which could undo an erasure. It now runs in its own namespace.
 > - The cost budget did not stop retries inside one model step. It is now checked before every call.
 > - Chat citations matched only the section number. They now need the exact heading.
 > - Impact totals were capped at one page of results. They are now exact.
+>
+> A third, independent audit of `b91c1dc` reproduced the tests, the retrieval scores and the LoRA adapter's 42/52 on CPU, and found smaller gaps, fixed with tests in `tests/test_independent_audit_fixes.py` (89 tests in total). The critic could still be shown a shortened action while the review was marked complete. A phone number followed by a date swallowed the date and part of a regulation number. Real RSS dates sorted alphabetically. An unresolved classification was silently routed like a confident one; it now goes to a visible "triage" status. MCP results were not masked, and the erasure certificate's wording claimed an inventory of tasks and checkpoints it does not contain.
 >
 > What is still open is listed under [Limitations](#limitations).
 
@@ -127,7 +129,7 @@ The mock-model run (`artifacts/brief_eval_mock.json`, 11 events, rerun on the cu
 
 The result is a JSON certificate in the audit log, HMAC-signed. Without `RADAR_SIGNING_KEY` it is signed with a public demo key and says so: that signature only shows the file was not accidentally altered, not who issued it. Tested: erase → re-ingest → rebuild leaves the document out, and only the explicit reset restores it.
 
-What this is not: a proof that the content has no influence left. Briefs, tasks and graph checkpoints that quoted the document are listed in the certificate, not redacted. Browser chat history, backups and copies inside other containers are out of scope. No model in this repository was trained on the company documents, so no weights need unlearning.
+What this is not: a proof that the content has no influence left. Briefs whose citations name the document are listed in the certificate (not redacted); tasks, graph checkpoints and other derived copies are neither listed nor removed. Browser chat history, backups and copies inside other containers are out of scope. No model in this repository was trained on the company documents, so no weights need unlearning.
 
 ## Design decisions
 
@@ -142,7 +144,7 @@ What this is not: a proof that the content has no influence left. Briefs, tasks 
 | **Two runtime modes behind one interface** (embedded Qdrant + fakeredis + SQLite, or real services). | Anyone can run it in a minute; CI runs both, the second against real Qdrant, Redis and Postgres containers. |
 | **Local embeddings, BM25 and reranker (ONNX).** | Company documents are not sent anywhere for retrieval; only selected passages reach the LLM, after masking. |
 | **Retry policy that reads the provider's answer, plus model fallback; no silent mock.** | Per-minute limits are waited out; a daily quota sends the request to the smaller model, recorded on the brief. A real provider without a key now raises an error instead of quietly running the mock. A per-brief cost and time budget is checked before every model call, retries and fallback included. Cost is estimated from reported tokens, so one call can overshoot the cap; calls with unknown prices are counted as `unpriced_calls`. |
-| **Mock chat model implementing the LangChain interface.** | 74 tests and the mock evaluation need no key, so prompt-format and schema bugs fail in CI. |
+| **Mock chat model implementing the LangChain interface.** | 89 tests and the mock evaluation need no key, so prompt-format and schema bugs fail in CI. |
 
 ## Quick start
 
@@ -150,7 +152,7 @@ What this is not: a proof that the content has no influence left. Briefs, tasks 
 python -m venv .venv && .venv/Scripts/activate        # source .venv/bin/activate on Linux/macOS
 pip install -r requirements.txt
 make data index       # generate the demo company (200 suppliers, 715 parts, 20 products, 52 documents) and index it
-make test             # 74 tests, offline
+make test             # 89 tests, offline
 streamlit run ui/app.py
 ```
 
@@ -162,7 +164,7 @@ Evaluations: `python -m evaluation.retrieval` · `python -m evaluation.classifie
 
 Fine-tuned classifier tier (optional): `pip install torch --index-url https://download.pytorch.org/whl/cpu && pip install -r requirements-lora.txt` (pinned to the versions it was evaluated with), then set `RADAR_CLASSIFIER_MODEL=models/event-classifier-lora`. The plain Docker image does not include it.
 
-MCP: `python -m radar.mcp_server` exposes search, supplier and BOM lookup, events and brief drafting to Claude Desktop / Claude Code. There is deliberately no tool to approve a brief.
+MCP: `python -m radar.mcp_server` exposes search, supplier and BOM lookup, events and brief drafting to Claude Desktop / Claude Code. There is deliberately no tool to approve a brief. MCP results get the same e-mail/phone masking, since the client may pass them to a hosted model.
 
 ## Repository map
 
@@ -185,7 +187,7 @@ artifacts/                  current results; superseded_af9dd6b/ keeps the pre-a
 colab/train_classifier.ipynb   LoRA fine-tuning of the event classifier
 models/event-classifier-lora/  the trained adapter and its label mapping
 docs/                       DESIGN.md (the original plan + what was built), INTERVIEW_NOTES.md
-tests/                      74 tests (tests/test_audit_fixes.py covers the audit fixes)
+tests/                      89 tests (tests/test_audit_fixes.py covers the audit fixes)
 ```
 
 ## Limitations

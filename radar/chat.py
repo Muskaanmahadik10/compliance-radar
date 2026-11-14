@@ -24,7 +24,7 @@ from radar.privacy import redact_messages, redact_pii
 from radar.retrieval import DocumentStore
 from radar.tools.registry import _INJ
 
-_CITE = re.compile(r"\[([A-Z]+-[A-Z0-9-]+) §([^\]]+)\]")
+_CITE = re.compile(r"\[([A-Za-z]+-[A-Za-z0-9-]+) §([^\]]+)\]")  # any case: a lower-case id is reported as invalid, not skipped
 
 REWRITE = """Rewrite the question as one short search query for a corporate compliance knowledge base. Replace everyday words with the standard terms a policy would use (for example PFAS, RoHS, REACH SVHC, CMRT, RMAP smelter, RBA audit, Entity List, ECCN, SBOM, material declaration). Reply with the query only.
 Question: {q}"""
