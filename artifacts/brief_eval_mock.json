@@ -4,8 +4,16 @@
     "cheap": "mock",
     "strong": "mock"
   },
-  "commit": "50128cc-dirty",
-  "run_at": "2026-11-13T17:58:41+00:00",
+  "commit": "9f4a9ae",
+  "dirty": false,
+  "state": {
+    "namespace": ".local-eval\\briefs",
+    "collection": "company_docs_eval"
+  },
+  "inputs_sha256": {
+    "events_replay.jsonl": "5d5d45189172648c15b1c8830499f669c032e1d18694f5f64f79e301aef3ae17"
+  },
+  "run_at": "2026-11-14T08:08:18+00:00",
   "summary": {
     "truth_events": 11,
     "classified_relevant": 11,
@@ -16,7 +24,7 @@
     "sample": "all matching events",
     "impact_ids_exact": 1.0,
     "policy_cited": 1.0,
-    "grounded_first_try": 1.0,
+    "first_draft_no_removals": 1.0,
     "structural_ok": 1.0,
     "actions_cited": 1.0,
     "critic_ran": 1.0,
@@ -33,7 +41,7 @@
       "suppliers_found": 54,
       "suppliers_truth": 54,
       "policy_cited": true,
-      "grounded_first_try": true,
+      "first_draft_no_removals": true,
       "first_try_removals": 0,
       "first_try_codes": [
         "name_corrected"
@@ -45,61 +53,7 @@
       "critic_approved": true,
       "critic_notes": [],
       "final_findings": [
-        "6 name(s) replaced with the names on record: P00331 ('P00331' -> 'PTFE coating - grade A'), P00626 ('P00626' -> 'PTFE coating - automotive'), P00664 ('P00664' -> 'PTFE coating - grade A') ..."
-      ],
-      "fallback": false,
-      "drafted_by": "mock",
-      "n_citations": 8,
-      "cost_usd": 0.0,
-      "latency_s": 4.49
-    },
-    {
-      "topic": "rohs",
-      "title": "Commission Delegated Directive amending RoHS Annex III: exemption 7(a)",
-      "impact_ids_exact": true,
-      "suppliers_found": 23,
-      "suppliers_truth": 23,
-      "policy_cited": true,
-      "grounded_first_try": true,
-      "first_try_removals": 0,
-      "first_try_codes": [
-        "name_corrected"
-      ],
-      "n_attempts": 1,
-      "structural_ok": true,
-      "actions_cited": true,
-      "critic_ran": true,
-      "critic_approved": true,
-      "critic_notes": [],
-      "final_findings": [
-        "6 name(s) replaced with the names on record: P00427 ('P00427' -> 'lead solder - grade B'), P00601 ('P00601' -> 'lead solder - grade A'), P00572 ('P00572' -> 'lead solder - automotive') ..."
-      ],
-      "fallback": false,
-      "drafted_by": "mock",
-      "n_citations": 8,
-      "cost_usd": 0.0,
-      "latency_s": 3.16
-    },
-    {
-      "topic": "reach_svhc",
-      "title": "Candidate List updated with three new SVHCs including a brominated fla",
-      "impact_ids_exact": true,
-      "suppliers_found": 18,
-      "suppliers_truth": 18,
-      "policy_cited": true,
-      "grounded_first_try": true,
-      "first_try_removals": 0,
-      "first_try_codes": [
-        "name_corrected"
-      ],
-      "n_attempts": 1,
-      "structural_ok": true,
-      "actions_cited": true,
-      "critic_ran": true,
-      "critic_approved": true,
-      "critic_notes": [],
-      "final_findings": [
-        "6 name(s) replaced with the names on record: P00456 ('P00456' -> 'brominated flame retardant - automotive'), P00360 ('P00360' -> 'brominated flame retardant - industrial'), P00115 ('P00115' -> 'brominated flame retardant - grade B') ..."
+        "6 name(s) replaced with the names on record: P00086 ('P00086' -> 'PTFE coating - grade A'), P00234 ('P00234' -> 'PTFE coating - grade B'), P00311 ('P00311' -> 'PTFE coating - grade A') ..."
       ],
       "fallback": false,
       "drafted_by": "mock",
@@ -108,13 +62,67 @@
       "latency_s": 3.42
     },
     {
+      "topic": "rohs",
+      "title": "Commission Delegated Directive amending RoHS Annex III: exemption 7(a)",
+      "impact_ids_exact": true,
+      "suppliers_found": 23,
+      "suppliers_truth": 23,
+      "policy_cited": true,
+      "first_draft_no_removals": true,
+      "first_try_removals": 0,
+      "first_try_codes": [
+        "name_corrected"
+      ],
+      "n_attempts": 1,
+      "structural_ok": true,
+      "actions_cited": true,
+      "critic_ran": true,
+      "critic_approved": true,
+      "critic_notes": [],
+      "final_findings": [
+        "6 name(s) replaced with the names on record: P00047 ('P00047' -> 'lead solder - grade A'), P00053 ('P00053' -> 'lead solder - grade B'), P00180 ('P00180' -> 'lead solder - industrial') ..."
+      ],
+      "fallback": false,
+      "drafted_by": "mock",
+      "n_citations": 8,
+      "cost_usd": 0.0,
+      "latency_s": 3.14
+    },
+    {
+      "topic": "reach_svhc",
+      "title": "Candidate List updated with three new SVHCs including a brominated fla",
+      "impact_ids_exact": true,
+      "suppliers_found": 18,
+      "suppliers_truth": 18,
+      "policy_cited": true,
+      "first_draft_no_removals": true,
+      "first_try_removals": 0,
+      "first_try_codes": [
+        "name_corrected"
+      ],
+      "n_attempts": 1,
+      "structural_ok": true,
+      "actions_cited": true,
+      "critic_ran": true,
+      "critic_approved": true,
+      "critic_notes": [],
+      "final_findings": [
+        "6 name(s) replaced with the names on record: P00016 ('P00016' -> 'brominated flame retardant - automotive'), P00070 ('P00070' -> 'brominated flame retardant - grade B'), P00115 ('P00115' -> 'brominated flame retardant - grade B') ..."
+      ],
+      "fallback": false,
+      "drafted_by": "mock",
+      "n_citations": 8,
+      "cost_usd": 0.0,
+      "latency_s": 3.48
+    },
+    {
       "topic": "export_control",
       "title": "BIS adds 12 entities to the Entity List including two Chinese electron",
       "impact_ids_exact": true,
       "suppliers_found": 1,
       "suppliers_truth": 1,
       "policy_cited": true,
-      "grounded_first_try": true,
+      "first_draft_no_removals": true,
       "first_try_removals": 0,
       "first_try_codes": [],
       "n_attempts": 1,
@@ -128,7 +136,7 @@
       "drafted_by": "mock",
       "n_citations": 8,
       "cost_usd": 0.0,
-      "latency_s": 3.36
+      "latency_s": 2.99
     },
     {
       "topic": "supplier_incident",
@@ -137,7 +145,7 @@
       "suppliers_found": 2,
       "suppliers_truth": 2,
       "policy_cited": true,
-      "grounded_first_try": true,
+      "first_draft_no_removals": true,
       "first_try_removals": 0,
       "first_try_codes": [
         "name_corrected"
@@ -155,7 +163,7 @@
       "drafted_by": "mock",
       "n_citations": 8,
       "cost_usd": 0.0,
-      "latency_s": 3.4
+      "latency_s": 3.16
     },
     {
       "topic": "battery",
@@ -164,7 +172,7 @@
       "suppliers_found": 16,
       "suppliers_truth": 16,
       "policy_cited": true,
-      "grounded_first_try": true,
+      "first_draft_no_removals": true,
       "first_try_removals": 0,
       "first_try_codes": [
         "name_corrected"
@@ -176,13 +184,13 @@
       "critic_approved": true,
       "critic_notes": [],
       "final_findings": [
-        "6 name(s) replaced with the names on record: P00232 ('P00232' -> 'lithium-ion cell - grade A'), P00443 ('P00443' -> 'lithium-ion cell - grade A'), P00043 ('P00043' -> 'lithium-ion cell - consumer') ..."
+        "6 name(s) replaced with the names on record: P00043 ('P00043' -> 'lithium-ion cell - consumer'), P00232 ('P00232' -> 'lithium-ion cell - grade A'), P00233 ('P00233' -> 'lithium-ion cell - automotive') ..."
       ],
       "fallback": false,
       "drafted_by": "mock",
       "n_citations": 8,
       "cost_usd": 0.0,
-      "latency_s": 3.44
+      "latency_s": 3.56
     },
     {
       "topic": "pfas",
@@ -191,7 +199,7 @@
       "suppliers_found": 54,
       "suppliers_truth": 54,
       "policy_cited": true,
-      "grounded_first_try": true,
+      "first_draft_no_removals": true,
       "first_try_removals": 0,
       "first_try_codes": [
         "name_corrected"
@@ -203,13 +211,13 @@
       "critic_approved": true,
       "critic_notes": [],
       "final_findings": [
-        "6 name(s) replaced with the names on record: P00331 ('P00331' -> 'PTFE coating - grade A'), P00626 ('P00626' -> 'PTFE coating - automotive'), P00664 ('P00664' -> 'PTFE coating - grade A') ..."
+        "6 name(s) replaced with the names on record: P00086 ('P00086' -> 'PTFE coating - grade A'), P00234 ('P00234' -> 'PTFE coating - grade B'), P00311 ('P00311' -> 'PTFE coating - grade A') ..."
       ],
       "fallback": false,
       "drafted_by": "mock",
       "n_citations": 8,
       "cost_usd": 0.0,
-      "latency_s": 3.58
+      "latency_s": 3.72
     },
     {
       "topic": "rba_labour",
@@ -218,7 +226,7 @@
       "suppliers_found": 21,
       "suppliers_truth": 21,
       "policy_cited": true,
-      "grounded_first_try": true,
+      "first_draft_no_removals": true,
       "first_try_removals": 0,
       "first_try_codes": [
         "name_corrected"
@@ -230,13 +238,13 @@
       "critic_approved": true,
       "critic_notes": [],
       "final_findings": [
-        "6 name(s) replaced with the names on record: P00707 ('P00707' -> 'aluminium housing - grade A'), P00351 ('P00351' -> 'aluminium housing - grade A'), P00211 ('P00211' -> 'aluminium housing - industrial') ..."
+        "6 name(s) replaced with the names on record: P00073 ('P00073' -> 'aluminium housing - automotive'), P00195 ('P00195' -> 'aluminium housing - automotive'), P00211 ('P00211' -> 'aluminium housing - industrial') ..."
       ],
       "fallback": false,
       "drafted_by": "mock",
       "n_citations": 8,
       "cost_usd": 0.0,
-      "latency_s": 2.93
+      "latency_s": 3.01
     },
     {
       "topic": "export_control",
@@ -245,7 +253,7 @@
       "suppliers_found": 20,
       "suppliers_truth": 20,
       "policy_cited": true,
-      "grounded_first_try": true,
+      "first_draft_no_removals": true,
       "first_try_removals": 0,
       "first_try_codes": [
         "name_corrected"
@@ -257,13 +265,13 @@
       "critic_approved": true,
       "critic_notes": [],
       "final_findings": [
-        "6 name(s) replaced with the names on record: P00685 ('P00685' -> 'high-performance FPGA - grade A'), P00131 ('P00131' -> 'high-performance FPGA - consumer'), P00005 ('P00005' -> 'high-performance FPGA - industrial') ..."
+        "6 name(s) replaced with the names on record: P00005 ('P00005' -> 'high-performance FPGA - industrial'), P00131 ('P00131' -> 'high-performance FPGA - consumer'), P00448 ('P00448' -> 'high-performance FPGA - automotive') ..."
       ],
       "fallback": false,
       "drafted_by": "mock",
       "n_citations": 8,
       "cost_usd": 0.0,
-      "latency_s": 3.24
+      "latency_s": 3.48
     },
     {
       "topic": "packaging",
@@ -272,7 +280,7 @@
       "suppliers_found": 38,
       "suppliers_truth": 38,
       "policy_cited": true,
-      "grounded_first_try": true,
+      "first_draft_no_removals": true,
       "first_try_removals": 0,
       "first_try_codes": [
         "name_corrected"
@@ -284,13 +292,13 @@
       "critic_approved": true,
       "critic_notes": [],
       "final_findings": [
-        "6 name(s) replaced with the names on record: P00032 ('P00032' -> 'EPS foam packaging - grade B'), P00031 ('P00031' -> 'EPS foam packaging - consumer'), P00240 ('P00240' -> 'EPS foam packaging - grade A') ..."
+        "6 name(s) replaced with the names on record: P00031 ('P00031' -> 'EPS foam packaging - consumer'), P00032 ('P00032' -> 'EPS foam packaging - grade B'), P00054 ('P00054' -> 'EPS foam packaging - automotive') ..."
       ],
       "fallback": false,
       "drafted_by": "mock",
       "n_citations": 8,
       "cost_usd": 0.0,
-      "latency_s": 3.26
+      "latency_s": 3.73
     },
     {
       "topic": "cybersecurity",
@@ -299,7 +307,7 @@
       "suppliers_found": 0,
       "suppliers_truth": 0,
       "policy_cited": true,
-      "grounded_first_try": true,
+      "first_draft_no_removals": true,
       "first_try_removals": 0,
       "first_try_codes": [],
       "n_attempts": 1,
@@ -313,7 +321,7 @@
       "drafted_by": "mock",
       "n_citations": 8,
       "cost_usd": 0.0,
-      "latency_s": 2.91
+      "latency_s": 3.07
     }
   ]
 }

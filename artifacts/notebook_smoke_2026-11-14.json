@@ -1,0 +1,83 @@
+{
+  "what": "colab/train_classifier.ipynb executed cell by cell on CPU as a smoke test (scripts/smoke_test_notebook.py)",
+  "changes_for_smoke": [
+    "shell lines skipped; installed packages used",
+    "train/validation cut to 64/26 headlines",
+    "max_steps=2, no per-epoch eval/save"
+  ],
+  "notebook_sha256": "39a993c3ef078a419bdb641ac7d4efbaf617a5d05b76011ef4b4c0a2f0d5d4dc",
+  "repo_commit": "9f4a9ae",
+  "notebook_training_arguments_accepted": {
+    "output_dir": "clf-out",
+    "learning_rate": 0.0005,
+    "per_device_train_batch_size": 32,
+    "per_device_eval_batch_size": 64,
+    "num_train_epochs": 12,
+    "weight_decay": 0.01,
+    "warmup_steps": 0.1,
+    "eval_strategy": "epoch",
+    "save_strategy": "epoch",
+    "load_best_model_at_end": true,
+    "metric_for_best_model": "macro_f1",
+    "logging_steps": 20,
+    "seed": 7,
+    "report_to": "none",
+    "fp16": false
+  },
+  "reload_check": "passed (same label mapping, identical test predictions)",
+  "manifest_written_by_notebook": {
+    "seed": 7,
+    "base_model": "xlm-roberta-base",
+    "lora": {
+      "r": 16,
+      "alpha": 32,
+      "dropout": 0.1,
+      "target_modules": [
+        "query",
+        "value"
+      ]
+    },
+    "data": {
+      "train": 64,
+      "validation": 26,
+      "test": 52,
+      "labels": 13,
+      "train_sha256": "fba5249cf326892002d9eb8abc667b1e983e1e6ab0d1da6ed46b4e5c576a439f",
+      "test_sha256": "7b05990524b9d22d629e50960ab7a7758bb302abe76d0effecd4894c0ab9a825"
+    },
+    "repo_commit": "",
+    "versions": {
+      "python": "3.13.14",
+      "torch": "2.15.0+cpu",
+      "transformers": "5.22.2",
+      "peft": "0.21.2",
+      "accelerate": "1.15.0",
+      "datasets": "5.2.0",
+      "scikit-learn": "1.9.1"
+    },
+    "device": "cpu",
+    "training_args": {
+      "learning_rate": 0.0005,
+      "num_train_epochs": 12,
+      "max_steps": 2,
+      "warmup_steps": 0.1,
+      "per_device_train_batch_size": 32,
+      "weight_decay": 0.01
+    },
+    "result": {
+      "tier": "lora (xlm-roberta-base, r=16)",
+      "n": 52,
+      "accuracy": 0.077,
+      "macro_f1": 0.011,
+      "train_rows": 64,
+      "cost_usd_per_1k_events": 0.0
+    },
+    "files_sha256": {
+      "adapter_model.safetensors": "c7b6ac9ff2d722b293d902be2f1ad66a9e91a6964fc0476c10189b7a3d437730",
+      "adapter_config.json": "25443b70da9fe272c5567f816d9828f03333fef24e74ee57666b177e3e40e135",
+      "label_mapping.json": "11e983e3b0e75c897b20d4df8e262940cd12359d9779abf2526fafdd65067402"
+    }
+  },
+  "scores_note": "test scores after 2 steps are meaningless; the reported 0.808 accuracy is the original 13 Nov Colab run",
+  "run_at": "2026-11-14T08:07:19+00:00"
+}
