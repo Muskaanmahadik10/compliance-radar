@@ -4,7 +4,7 @@
     "cheap": "mock",
     "strong": "mock"
   },
-  "commit": "9f4a9ae",
+  "commit": "3f81670",
   "dirty": false,
   "state": {
     "namespace": ".local-eval\\briefs",
@@ -13,7 +13,7 @@
   "inputs_sha256": {
     "events_replay.jsonl": "5d5d45189172648c15b1c8830499f669c032e1d18694f5f64f79e301aef3ae17"
   },
-  "run_at": "2026-11-14T08:08:18+00:00",
+  "run_at": "2026-11-14T09:06:00+00:00",
   "summary": {
     "truth_events": 11,
     "classified_relevant": 11,
@@ -31,7 +31,7 @@
     "critic_approved": 1.0,
     "fallback_rate": 0.0,
     "mean_cost_usd_estimated": 0.0,
-    "p50_latency_s": 3.4
+    "p50_latency_s": 3.3
   },
   "rows": [
     {
@@ -59,7 +59,7 @@
       "drafted_by": "mock",
       "n_citations": 8,
       "cost_usd": 0.0,
-      "latency_s": 3.42
+      "latency_s": 3.44
     },
     {
       "topic": "rohs",
@@ -86,7 +86,7 @@
       "drafted_by": "mock",
       "n_citations": 8,
       "cost_usd": 0.0,
-      "latency_s": 3.14
+      "latency_s": 3.29
     },
     {
       "topic": "reach_svhc",
@@ -113,7 +113,7 @@
       "drafted_by": "mock",
       "n_citations": 8,
       "cost_usd": 0.0,
-      "latency_s": 3.48
+      "latency_s": 3.56
     },
     {
       "topic": "export_control",
@@ -136,7 +136,7 @@
       "drafted_by": "mock",
       "n_citations": 8,
       "cost_usd": 0.0,
-      "latency_s": 2.99
+      "latency_s": 2.92
     },
     {
       "topic": "supplier_incident",
@@ -163,7 +163,7 @@
       "drafted_by": "mock",
       "n_citations": 8,
       "cost_usd": 0.0,
-      "latency_s": 3.16
+      "latency_s": 3.34
     },
     {
       "topic": "battery",
@@ -190,7 +190,7 @@
       "drafted_by": "mock",
       "n_citations": 8,
       "cost_usd": 0.0,
-      "latency_s": 3.56
+      "latency_s": 3.55
     },
     {
       "topic": "pfas",
@@ -217,7 +217,7 @@
       "drafted_by": "mock",
       "n_citations": 8,
       "cost_usd": 0.0,
-      "latency_s": 3.72
+      "latency_s": 3.58
     },
     {
       "topic": "rba_labour",
@@ -244,7 +244,7 @@
       "drafted_by": "mock",
       "n_citations": 8,
       "cost_usd": 0.0,
-      "latency_s": 3.01
+      "latency_s": 3.11
     },
     {
       "topic": "export_control",
@@ -271,7 +271,7 @@
       "drafted_by": "mock",
       "n_citations": 8,
       "cost_usd": 0.0,
-      "latency_s": 3.48
+      "latency_s": 3.27
     },
     {
       "topic": "packaging",
@@ -298,7 +298,7 @@
       "drafted_by": "mock",
       "n_citations": 8,
       "cost_usd": 0.0,
-      "latency_s": 3.73
+      "latency_s": 3.26
     },
     {
       "topic": "cybersecurity",
@@ -321,7 +321,7 @@
       "drafted_by": "mock",
       "n_citations": 8,
       "cost_usd": 0.0,
-      "latency_s": 3.07
+      "latency_s": 3.44
     }
   ]
 }
