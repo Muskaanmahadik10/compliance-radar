@@ -3,7 +3,7 @@ import json
 import pytest
 from sqlalchemy import select
 
-from radar.config import DATA_DIR
+from radar.config import settings
 from radar.data.schemas import MATERIAL_TOPIC, ImpactBrief
 from radar.db.schema import audit_log, events
 from radar.infra import get_db_engine, get_redis
@@ -38,7 +38,7 @@ def test_pfas_event_produces_grounded_brief_and_pauses_for_review(company):
     brief = ImpactBrief(**{k: v for k, v in b["brief"].items() if not k.startswith("_")})
     assert brief.requires_approval and brief.topic.value == "pfas"
     # counts are the SQL truth, independent of the model
-    sup = json.loads((DATA_DIR / "generated" / "suppliers.json").read_text(encoding="utf-8"))
+    sup = json.loads((settings.generated_dir / "suppliers.json").read_text(encoding="utf-8"))
     pfas_mats = {m for m, t in MATERIAL_TOPIC.items() if t.value == "pfas"}
     truth = sum(1 for s in sup if set(s["materials"]) & pfas_mats)
     assert brief.affected_counts["suppliers"] == truth > 0
@@ -64,7 +64,7 @@ def test_incident_event_is_scoped_by_country_and_material(company):
 
     b = start_brief(company["supplier_incident"])
     counts = b["brief"]["affected_counts"]
-    sup = json.loads((DATA_DIR / "generated" / "suppliers.json").read_text(encoding="utf-8"))
+    sup = json.loads((settings.generated_dir / "suppliers.json").read_text(encoding="utf-8"))
     truth = sum(1 for s in sup if s["country"] == "Vietnam" and "tantalum capacitor" in s["materials"])
     assert counts["suppliers"] == truth
     rej = decide(b["brief_id"], approve=False, by="compliance_manager", comment="not relevant")
@@ -104,5 +104,6 @@ def test_verify_rejects_another_suppliers_contract_as_evidence(company):
     by_id = {a["id"]: a for a in out["draft"]["affected"]}
     assert by_id["S0111"]["citations"] and not by_id["S0135"]["citations"]
     assert any("another supplier's contract" in f for f in out["auto_findings"])
-    assert any("CTR-S0038 has no citation" in f for f in out["auto_findings"])
+    # A contract entry that was never retrieved is not a verified affected item: removed, and left for the reviewer.
+    assert "CTR-S0038" not in by_id and any("CTR-S0038" in q for q in out["draft"]["open_questions"])
     _RUNS.pop("t-verify2", None)

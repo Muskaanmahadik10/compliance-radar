@@ -120,7 +120,7 @@ def process_available(deduper: Deduper | None = None, llm=_AUTO, max_items: int 
             row = {"event_id": item["event_id"], "source": item["source"], "url": item.get("url", ""), "title": item["title"], "summary": item.get("summary", ""),
                    "published": str(item.get("published", datetime.now(UTC).isoformat())), "jurisdiction": cl.jurisdiction.value, "topic": cl.topic.value,
                    "urgency": cl.urgency, "language": cl.language, "status": "new" if cl.topic in RELEVANT else "ignored",
-                   "raw": {"classifier": cl.tier, "confidence": cl.confidence, "classifier_llm": llm_name if cl.tier == "llm" else None}}
+                   "raw": {"classifier": cl.tier, "confidence": cl.confidence, "resolved": cl.resolved, "classifier_llm": llm_name if cl.tier == "llm" else None}}
             with eng.begin() as c:
                 c.execute(insert(events), [row])
             stats["stored"] += 1

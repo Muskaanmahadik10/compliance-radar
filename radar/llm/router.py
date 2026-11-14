@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import lru_cache
 from urllib.parse import urlparse
@@ -18,6 +19,7 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models.chat_models import BaseChatModel
 
 from radar.config import settings
+from radar.privacy import redact_messages
 
 # USD per 1M tokens (input, output). Edit for your provider; used only for accounting.
 PRICES: dict[str, tuple[float, float]] = {
@@ -34,6 +36,7 @@ class CostLedger(BaseCallbackHandler):
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: float = 0.0
+    unpriced_calls: int = 0  # calls whose model has no price or whose response had no usage: counted as $0, reported
     by_model: dict = field(default_factory=dict)
 
     def on_llm_end(self, response, **kwargs):
@@ -43,8 +46,11 @@ class CostLedger(BaseCallbackHandler):
                 usage = getattr(msg, "usage_metadata", None) or {}
                 model = (getattr(msg, "response_metadata", {}) or {}).get("model_name") or (getattr(msg, "response_metadata", {}) or {}).get("model") or "unknown"
                 i, o = int(usage.get("input_tokens", 0)), int(usage.get("output_tokens", 0))
-                pin, pout = PRICES.get(model, PRICES.get(model.split("/")[-1], (0.0, 0.0)))
+                price = PRICES.get(model, PRICES.get(model.split("/")[-1]))
+                pin, pout = price or (0.0, 0.0)
                 cost = (i * pin + o * pout) / 1e6
+                if (price is None or not usage) and model != "mock" and not model.startswith("mock"):
+                    self.unpriced_calls += 1
                 self.calls += 1
                 self.input_tokens += i
                 self.output_tokens += o
@@ -56,7 +62,8 @@ class CostLedger(BaseCallbackHandler):
                 m["cost_usd"] += cost
 
     def summary(self) -> dict:
-        return {"calls": self.calls, "input_tokens": self.input_tokens, "output_tokens": self.output_tokens, "cost_usd": round(self.cost_usd, 6), "by_model": self.by_model}
+        return {"calls": self.calls, "input_tokens": self.input_tokens, "output_tokens": self.output_tokens, "cost_usd": round(self.cost_usd, 6),
+                "unpriced_calls": self.unpriced_calls, "by_model": self.by_model}
 
 
 class MissingCredentials(RuntimeError):
@@ -137,7 +144,12 @@ def _retry_after_seconds(msg: str) -> float | None:
     return int(h or 0) * 3600 + int(mi or 0) * 60 + float(sec or 0) + int(ms or 0) / 1000
 
 
-def call_structured(llm: BaseChatModel, schema, messages: list, config: dict | None = None, attempts: int = 3, fallback: BaseChatModel | None = None):
+class BudgetSpent(RuntimeError):
+    """The run's cost or time budget is used up; no further model call may start."""
+
+
+def call_structured(llm: BaseChatModel, schema, messages: list, config: dict | None = None, attempts: int = 3, fallback: BaseChatModel | None = None,
+                    budget_spent: Callable[[], str] | None = None):
     """Invoke with structured output, retrying sensibly.
 
     - Formatting failures (prose instead of a tool call, invalid arguments): short pause, retry.
@@ -146,12 +158,20 @@ def call_structured(llm: BaseChatModel, schema, messages: list, config: dict | N
     - Oversized requests: never retried.
     - If `fallback` is given and the primary model is exhausted or rate limited, the fallback model gets one try.
       The returned object carries `_model_used` so the caller can record who actually wrote it.
+    - `budget_spent()` is checked before EVERY invocation, retries and the fallback included; when it returns a reason,
+      BudgetSpent is raised and no further call starts. (A single call can still overshoot the cap: its cost is only
+      known after it returns.)
+    - Every message is masked (radar/privacy.py) here, at the boundary, whatever the caller put into it.
     """
+    messages, _ = redact_messages(messages)
     last: Exception | None = None
     for model in [llm] + ([fallback] if fallback is not None and fallback is not llm else []):
         runner = structured(model, schema)
         n = attempts if model is llm else 2
         for i in range(n):
+            reason = budget_spent() if budget_spent else ""
+            if reason:
+                raise BudgetSpent(reason)
             try:
                 out = runner.invoke(messages, config=config)
                 if out is not None:

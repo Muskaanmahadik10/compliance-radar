@@ -32,7 +32,7 @@ from qdrant_client import models
 from sqlalchemy import insert, select, update
 
 from radar import chat
-from radar.config import DATA_DIR, settings
+from radar.config import settings
 from radar.db import create_all
 from radar.db.schema import audit_log, briefs, documents, erasures
 from radar.infra import get_db_engine
@@ -106,7 +106,7 @@ def certificate_authentic(cert: dict) -> bool:
 
 
 def _source_copies(doc_id: str) -> list[str]:
-    gen = DATA_DIR / "generated"
+    gen = settings.generated_dir
     found = []
     if (gen / "docs" / f"{doc_id}.md").exists():
         found.append(f"docs/{doc_id}.md")
@@ -143,7 +143,7 @@ def forget_document(doc_id: str, requested_by: str, reason: str = "erasure reque
         c.execute(update(documents).where(documents.c.doc_id == doc_id).values(status="deleted", n_chunks=0))
         citing = [r.brief_id for r in c.execute(select(briefs.c.brief_id, briefs.c.brief)) if any(ci.get("doc_id") == doc_id for ci in (r.brief or {}).get("citations", []))]
     copies_before = _source_copies(doc_id)
-    purge_erased_sources(DATA_DIR / "generated", {doc_id})
+    purge_erased_sources(settings.generated_dir, {doc_id})
 
     # 3. verify
     remaining = store.count_document(doc_id)

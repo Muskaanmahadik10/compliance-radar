@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
-from radar.config import DATA_DIR, ROOT, settings
+from radar.config import ROOT, settings
 from radar.data.schemas import Topic
 from radar.db.schema import documents, events, tasks
 from radar.infra import get_db_engine, get_redis
@@ -90,18 +90,18 @@ def test_erased_document_is_not_restored_by_reingest_or_rebuild(company):
     assert cert["verified"], cert["checks"]
     assert cert["checks"]["tombstone_blocks_reingestion"] and cert["checks"]["no_local_source_copy"]
     assert "documents.json" in cert["source_copies_removed"]
-    docs_json = json.loads((DATA_DIR / "generated" / "documents.json").read_text(encoding="utf-8"))
+    docs_json = json.loads((settings.generated_dir / "documents.json").read_text(encoding="utf-8"))
     assert all(d["doc_id"] != doc for d in docs_json)
     # ordinary ingestion, then an ordinary rebuild (no reset): the document must not come back
     ingest()
     assert DocumentStore().count_document(doc) == 0
     build_all()  # regenerates the synthetic files from the seed, then keeps tombstoned documents out of them
-    assert all(d["doc_id"] != doc for d in json.loads((DATA_DIR / "generated" / "documents.json").read_text(encoding="utf-8")))
+    assert all(d["doc_id"] != doc for d in json.loads((settings.generated_dir / "documents.json").read_text(encoding="utf-8")))
     ingest()
     assert DocumentStore().count_document(doc) == 0
     with get_db_engine().connect() as c:
         assert c.execute(select(documents.c.status).where(documents.c.doc_id == doc)).scalar() == "deleted"
-    assert not (DATA_DIR / "generated" / "docs" / f"{doc}.md").exists()
+    assert not (settings.generated_dir / "docs" / f"{doc}.md").exists()
     # only the explicit demo reset restores it
     build_all(reset_erasures=True)
     ingest()
@@ -126,11 +126,17 @@ def test_retrieved_passages_are_redacted_before_the_model_call():
     assert hits[0].text.startswith("Escalate to ming.chen")  # the original is kept for display
 
 
-def test_brief_evidence_block_is_redacted():
-    from radar.agent.graph import _fmt_evidence
+def test_brief_evidence_block_is_redacted_at_the_boundary():
+    """Masking now happens on the final outbound messages (radar/privacy.redact_messages, applied in call_structured);
+    tests/test_reaudit_fixes.py checks every model-bound path with a capturing fake provider."""
+    from langchain_core.messages import HumanMessage
 
-    block = _fmt_evidence([{"citation": "CTR-S0001 §9", "doc_type": "contract", "text": "Contact ops@supplier.example, +886 912 345 678, before 2026-12-01."}])
-    assert "ops@" not in block and "912" not in block and "2026-12-01" in block
+    from radar.agent.graph import _fmt_evidence
+    from radar.privacy import redact_messages
+
+    block, _ = _fmt_evidence([{"citation": "CTR-S0001 §9", "doc_type": "contract", "text": "Contact ops@supplier.example, +886 912 345 678, before 2026-12-01."}])
+    (msg,), n = redact_messages([HumanMessage(block)])
+    assert "ops@" not in msg.content and "912" not in msg.content and "2026-12-01" in msg.content and n == 2
 
 
 def test_dates_and_identifiers_are_not_masked_as_phones():
@@ -253,7 +259,8 @@ def test_verifier_checks_product_ids_names_and_policy_citations():
     by_id = {a["id"]: a for a in out["draft"]["affected"]}
     assert "GHOST-PRODUCT" not in by_id
     assert by_id["PSU-1200"]["name"] == "1200 W PSU" and by_id["S0001"]["name"] == "Acme Fluoro"
-    assert by_id["GHOST-POLICY"]["citations"] == []
+    assert "GHOST-POLICY" not in by_id  # re-audit CR-03: an unretrieved policy identity cannot stay as a verified item
+    assert any("GHOST-POLICY" in q for q in out["draft"]["open_questions"])
     assert any("GHOST-PRODUCT" in f for f in out["auto_findings"]) and any("cited a different document" in f for f in out["auto_findings"])
 
 

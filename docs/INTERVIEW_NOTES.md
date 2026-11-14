@@ -23,6 +23,22 @@ An AI coding assistant built the first version; a second AI (Codex) audited comm
 
 What I deliberately did *not* fix, and say so: authentication, pending-message recovery, a transactional outbox, idempotent task publication, verbatim-quote checking, Langfuse wiring. They are listed in the README's Limitations.
 
+**Second audit (14 Nov, of the repaired commit `a92c2bd`).** It found that several fixes were narrower than the README claimed. I verified each and fixed them, with tests in `tests/test_reaudit_fixes.py`:
+
+| Finding | What was wrong | Fix |
+|---|---|---|
+| CR-01 notebook | Still called `TrainingArguments(warmup_ratio=...)`, which transformers 5 rejects (the error I hit in Colab). | `warmup_steps=0.1` (a ratio in v5); pinned stack; label mapping, run manifest and a reload check saved with the adapter; `scripts/smoke_test_notebook.py` runs every cell on CPU. |
+| CR-02 masking | Masking was applied where prompts were built, so the classifier prompt, event JSON, citation headings and revision feedback went out unmasked. | Masking on the final messages at the call boundary (`call_structured`, classifier callback, chat). A capturing fake model checks every path. |
+| CR-03 ghost policy | An invented policy id stayed in the brief with no citation; only its borrowed citation was removed. | A policy/contract entry must be a document retrieved in that run and cite its own section, or it moves to open questions. |
+| CR-04 partial critic view | The critic saw the first 6,000 characters, so a long brief's last actions and SQL totals could be cut off and still approved. | Compact view with every action and its citation ids, cited passages first; if it still doesn't fit, `partial_review` blocks approval. |
+| CR-05 evaluation reset | `evaluation.briefs` cleared tombstones and rebuilt the app's own index, undoing erasures. | Separate namespace by default (`.local-eval/`); `--use-app-state` to opt in; tests use their own generated-data folder too. |
+| CR-06 budget | Checked between graph steps, not before retries inside one step. | `call_structured` checks the cost/time budget before every invocation, retry and fallback; unknown prices are counted. |
+| CR-07 chat citations | Matched by section number, so "§2 Reporting" could resolve to "2 Reporting (part 2)"; invented headings sharing "2" passed. | Exact heading identity; bare numbers only when unambiguous; uncited answers flagged. |
+| CR-09 capped totals | Supplier/part lists were capped at 100/200 and the totals counted the capped lists. | Paginated lookups with exact SQL totals; completeness recorded with the brief. |
+| Smaller | Migration marked done before it committed; retrieval eval accepted section `10` for gold `1`; `--provider` only labelled the output file. | All fixed; the provider label is now checked against the configured model. |
+
+Not changed on purpose: the classifier's acceptance rule (CR-08). A headline about "strike prices" is a confident supplier incident. Fixing that would change a decision on the test set I developed against, so it needs a new frozen test set first. I did fix the jurisdiction word boundaries and mark unconfident results as unresolved.
+
 ## Design decisions and the questions they answer
 
 | Question you'll get | Answer |
@@ -36,12 +52,12 @@ What I deliberately did *not* fix, and say so: authentication, pending-message r
 | And after the fixes? | One small real-model check (first 3 replay events): supplier id sets exact 3/3, every action cited 3/3, critic approved 1/3. The two rejections were real: an action claiming a 15-day breach-notice duty that the cited clauses don't contain, and a summary saying 8 tier-1 suppliers where SQL says 11. Both had valid citations, which is exactly why citation checks alone aren't enough. The run also exposed a bug in my new count check: it read "tier‑1" with a non-breaking hyphen as "1 suppliers". I fixed it with a regression test. |
 | A bug you found yourself? | After a restart the deduper remembered stored ids but not titles, so a near-duplicate of the same regulation was stored twice. The idempotency test caught it; the fix re-seeds the LSH from the database. |
 | A production-style failure you handled? | The free tier's daily token quota ran out mid-evaluation. My first diagnosis (request too large) was wrong; the error said "tokens per day, try again in 28 minutes". Now the retry policy parses that: it waits out per-minute limits, sends daily-quota failures to the smaller model, and records which model wrote the brief. |
-| How is cost controlled? | A router sends cheap steps to a small model and drafting/critique to a larger one. A callback estimates cost from reported tokens and a price table (an estimate: unknown models count as $0), and a per-brief budget stops further model calls once spent. |
-| What about confidential data? | Embeddings, BM25 and reranking run locally. Only selected passages go to the LLM, with e-mail addresses and phone numbers masked (nothing else is detected). The provider can be a local model via one env var. |
+| How is cost controlled? | A router sends cheap steps to a small model and drafting/critique to a larger one. A callback estimates cost from reported tokens and a price table (an estimate: unknown models count as $0), and a per-brief cost and time budget is checked before every model call, retries and fallback included. One call can still overshoot, because its cost is known only after it returns. |
+| What about confidential data? | Embeddings, BM25 and reranking run locally. Only selected passages go to the LLM, with e-mail addresses and phone numbers masked on the final outbound messages, wherever a model is called (nothing else is detected). The provider can be a local model via one env var. |
 | Prompt injection? | Retrieved text is treated as data: instruction-like passages are redacted, `web_fetch` is allow-listed, and there's no tool to approve a brief. Limits: the redaction is pattern-based, and tool permission labels aren't enforced at dispatch. |
 | What does erasure mean here? | Retrieval erasure with recorded checks: tombstone first, vector chunks and local source copies deleted, then checks that probes built from the document's own wording no longer retrieve it and answers don't cite it. It's a record of checks at a point in time, not proof of zero influence. Briefs that quoted it are listed, not redacted. No model here was trained on the documents, so unlearning, my thesis topic, isn't needed for this case. |
 | Why synthetic company data? | Real supplier masters are confidential, and evaluation needs ground truth ("this event affects exactly these suppliers"). Feeds are real public sources; a replay fixture makes tests deterministic. |
-| How do you test LLM code in CI? | A deterministic mock implements the LangChain interface, including structured output, so 54 tests and the mock evaluation run with no key. A second CI job runs the same tests against real Qdrant, Redis and Postgres containers. The mock critic always approves, so mock results check plumbing, not quality. |
+| How do you test LLM code in CI? | A deterministic mock implements the LangChain interface, including structured output, so 74 tests and the mock evaluation run with no key. A second CI job runs the same tests against real Qdrant, Redis and Postgres containers. The mock critic always approves, so mock results check plumbing, not quality. |
 
 ## What I would do next
 

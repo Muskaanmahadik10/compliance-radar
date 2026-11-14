@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 import httpx
 from pydantic import BaseModel, Field, ValidationError
-from sqlalchemy import insert, select
+from sqlalchemy import func, insert, select
 
 from radar.config import settings
 from radar.data.schemas import MATERIAL_TOPIC
@@ -56,6 +56,7 @@ class LookupSuppliersIn(BaseModel):
     country: str | None = None
     supplier_ids: list[str] | None = None
     limit: int = Field(default=25, ge=1, le=100)
+    offset: int = Field(default=0, ge=0, description="Skip this many matches (pagination); `count` is the exact total")
 
 
 class LookupBomIn(BaseModel):
@@ -63,6 +64,7 @@ class LookupBomIn(BaseModel):
     material: str | None = None
     topic: str | None = None
     limit: int = Field(default=50, ge=1, le=200)
+    offset: int = Field(default=0, ge=0, description="Skip this many matching parts (pagination); `count` is the exact total")
 
 
 class WebFetchIn(BaseModel):
@@ -104,26 +106,37 @@ def lookup_suppliers(ctx: ToolContext, a: LookupSuppliersIn) -> dict:
         if mats and not set(r["materials"]) & set(mats):
             continue
         out.append({k: r[k] for k in ("supplier_id", "name", "country", "tier", "materials", "certifications", "rba_audit_score", "risk_flags")})
-    return {"materials": mats, "count": len(out), "suppliers": out[: a.limit]}
+    out.sort(key=lambda r: r["supplier_id"])  # stable order, so pages never overlap or skip
+    return {"materials": mats, "count": len(out), "offset": a.offset, "suppliers": out[a.offset: a.offset + a.limit]}
 
 
 def lookup_bom(ctx: ToolContext, a: LookupBomIn) -> dict:
+    """Parts matching the filters that are used in at least one product, one page at a time, with every BOM line of each
+    returned part. `count` (parts) and `total_products` are exact totals over all matches, not over the page."""
     mats = _materials_for(a.topic, [a.material] if a.material else None)
+    used = parts.join(bom_lines, bom_lines.c.part_id == parts.c.part_id)
+    where = []
+    if a.part_ids:
+        where.append(parts.c.part_id.in_(a.part_ids))
+    if mats:
+        where.append(parts.c.material.in_(mats))
     eng = get_db_engine()
     with eng.connect() as c:
-        q = select(parts.c.part_id, parts.c.description, parts.c.material, parts.c.supplier_id, bom_lines.c.product_id, bom_lines.c.qty, products.c.name, products.c.markets)\
-            .select_from(parts.join(bom_lines, bom_lines.c.part_id == parts.c.part_id).join(products, products.c.product_id == bom_lines.c.product_id))
-        if a.part_ids:
-            q = q.where(parts.c.part_id.in_(a.part_ids))
-        if mats:
-            q = q.where(parts.c.material.in_(mats))
-        rows = c.execute(q.limit(a.limit * 4)).mappings().all()
+        matching = select(parts.c.part_id).select_from(used).where(*where).distinct()
+        total_parts = c.execute(select(func.count()).select_from(matching.subquery())).scalar_one()
+        total_products = c.execute(select(func.count(func.distinct(bom_lines.c.product_id))).select_from(used).where(*where)).scalar_one()
+        page = [r[0] for r in c.execute(matching.order_by(parts.c.part_id).offset(a.offset).limit(a.limit))]
+        cols = (parts.c.part_id, parts.c.description, parts.c.material, parts.c.supplier_id, bom_lines.c.product_id, bom_lines.c.qty, products.c.name, products.c.markets)
+        q = (select(*cols).select_from(used.join(products, products.c.product_id == bom_lines.c.product_id))
+             .where(parts.c.part_id.in_(page)).order_by(parts.c.part_id, bom_lines.c.product_id))
+        rows = c.execute(q).mappings().all() if page else []
     by_part: dict[str, dict] = {}
     for r in rows:
         p = by_part.setdefault(r["part_id"], {"part_id": r["part_id"], "description": r["description"], "material": r["material"], "supplier_id": r["supplier_id"], "products": []})
         p["products"].append({"product_id": r["product_id"], "name": r["name"], "qty": r["qty"], "markets": r["markets"]})
-    items = list(by_part.values())[: a.limit]
-    return {"materials": mats, "parts": items, "distinct_products": sorted({pp["product_id"] for it in items for pp in it["products"]})}
+    items = list(by_part.values())
+    return {"materials": mats, "count": total_parts, "total_products": total_products, "offset": a.offset, "parts": items,
+            "distinct_products": sorted({pp["product_id"] for it in items for pp in it["products"]})}
 
 
 def web_fetch(ctx: ToolContext, a: WebFetchIn) -> dict:

@@ -9,14 +9,14 @@ import argparse
 import json
 import time
 
-from radar.config import DATA_DIR
+from radar.config import settings
 from radar.db import erased_doc_ids
 from radar.retrieval.chunking import chunk_document
 from radar.retrieval.store import DocumentStore
 
 
 def ingest(recreate: bool = False) -> dict:
-    docs = json.loads((DATA_DIR / "generated" / "documents.json").read_text(encoding="utf-8"))
+    docs = json.loads((settings.generated_dir / "documents.json").read_text(encoding="utf-8"))
     erased = erased_doc_ids()
     skipped = sorted(d["doc_id"] for d in docs if d["doc_id"] in erased)
     docs = [d for d in docs if d["doc_id"] not in erased]

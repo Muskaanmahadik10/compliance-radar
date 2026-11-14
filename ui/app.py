@@ -18,7 +18,7 @@ from sqlalchemy import select
 
 from radar import chat
 from radar.agent import service
-from radar.config import ARTIFACTS_DIR, DATA_DIR, settings
+from radar.config import ARTIFACTS_DIR, settings
 from radar.db import create_all
 from radar.db.schema import documents, events
 from radar.forget import certificate_authentic, forget_document, verify_certificate
@@ -40,7 +40,7 @@ def bootstrap() -> dict:
     from radar.retrieval import DocumentStore
 
     out = {"built": False, "indexed": False}
-    if not (DATA_DIR / "generated" / "suppliers.json").exists():
+    if not (settings.generated_dir / "suppliers.json").exists():
         from radar.data.build import build_all
 
         build_all()
@@ -204,6 +204,8 @@ with tab_chat:
                 st.caption("Citations found among the retrieved passages: " + ", ".join(f"{c['doc_id']} §{c['section']}" for c in final["citations"]))
             if final.get("invalid_citations"):
                 st.warning("Citations not found in the retrieved passages: " + ", ".join(final["invalid_citations"]))
+            if final.get("support") == "uncited":
+                st.warning("No valid citation to a retrieved passage: treat this answer as unsupported.")
             with st.expander(f"Sources ({len(sources)}) · est. cost ${final.get('cost', {}).get('cost_usd', 0):.5f} · e-mails/phones masked before the model call: {final.get('pii_redacted', 0)}"):
                 for h in sources:
                     st.markdown(f"**{h['citation']}** ({h['doc_type']}, score {h['score']})  \n{h['text'][:300]}")

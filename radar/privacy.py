@@ -4,6 +4,11 @@ Scope, stated exactly: e-mail addresses and phone numbers. Nothing else (names, 
 detected. Dates are matched first and left alone, so "2026-11-13" or "13/11/2026" is never mistaken for a phone
 number, and a phone match must contain at least 9 digits, so regulation numbers such as "2023/1542" or CAS numbers
 such as "117-81-7" are not masked either.
+
+Where it is applied: at the boundary, on the final text of every outbound message, not at each place a prompt is
+assembled. `redact_messages` runs inside `call_structured` (decomposition, drafting, critic), in the classifier's LLM
+tier and on the final chat messages, so event JSON, evidence headings, drafts and feedback are all covered. Originals
+stay in the database for the human reviewer.
 """
 
 from __future__ import annotations
@@ -38,3 +43,27 @@ def redact_pii(text: str) -> tuple[str, int]:
         return "[phone]"
 
     return _DATE_OR_PHONE.sub(_num, _EMAIL.sub(_email, text)), n
+
+
+def redact_messages(messages: list) -> tuple[list, int]:
+    """Mask the text of every outbound message: LangChain messages (copied, not mutated) or plain strings."""
+    out, total = [], 0
+    for m in messages:
+        if isinstance(m, str):
+            text, n = redact_pii(m)
+            out.append(text)
+        elif isinstance(getattr(m, "content", None), str):
+            text, n = redact_pii(m.content)
+            out.append(m.model_copy(update={"content": text}) if n else m)
+        else:  # multi-part content: mask each text part
+            n, parts = 0, []
+            for part in getattr(m, "content", None) or []:
+                if isinstance(part, dict) and isinstance(part.get("text"), str):
+                    t, k = redact_pii(part["text"])
+                    parts.append(part | {"text": t})
+                    n += k
+                else:
+                    parts.append(part)
+            out.append(m.model_copy(update={"content": parts}) if n else m)
+        total += n
+    return out, total

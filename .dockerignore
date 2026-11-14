@@ -8,6 +8,7 @@
 venv
 .local
 .local-test
+.local-eval
 data/generated
 artifacts/traces
 colab/colab results

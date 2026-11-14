@@ -5,21 +5,26 @@
                                                                               └── revise ◄────┘ (at most one loop)
 
 Design points worth knowing:
-- Counts and affected lists come from SQL (`map_impact`), not from the model. The model describes and prioritises. The
-  full supplier/part/product id lists are stored with the brief (`_impact`), not only the model's top items.
+- Counts and affected lists come from SQL (`map_impact`, paginated, so totals are exact), not from the model. The model
+  describes and prioritises. The full supplier/part/product id lists are stored with the brief (`_impact`). They are
+  candidate impact from keyword-matched materials and countries, not checked legal applicability.
 - `verify` runs deterministic checks first, then an LLM critic. The deterministic checks are exactly these:
     * a cited (document, section) must be among the retrieved passages (section matched by its leading number);
     * supplier, part and product ids must be in the SQL impact result (otherwise removed), and their names are replaced
-      with the names on record; a policy/contract entry may only cite its own document;
+      with the names on record;
+    * a policy/contract entry must be a document retrieved in this run and cite one of its own sections; otherwise it
+      is removed from the affected items and listed under open questions as an unverified reference;
     * a supplier may only cite its own supply agreement;
     * every action needs at least one valid citation;
-    * an explicit "N suppliers/parts/products" in the summary must equal the SQL total.
-  The structural ones (uncited action, no valid citation, wrong count in the summary) make automatic approval false
-  whatever the critic says. Not checked deterministically: whether a quote is verbatim, whether a cited passage really
-  supports the claim, its direction or its deadline. That is left to the LLM critic and the human reviewer.
+    * an explicit "N suppliers/parts/products" in the summary must equal the SQL total;
+    * the critic must have been shown every action and affected item and the passage of every cited section.
+  The structural ones (uncited action, no valid citation, wrong count in the summary, partial critic review) make
+  automatic approval false whatever the critic says. Not checked deterministically: whether a quote is verbatim, whether
+  a cited passage really supports the claim, its direction or its deadline. That is left to the LLM critic and the
+  human reviewer.
 - `human_review` uses LangGraph's `interrupt`: the run is checkpointed and resumes when a person decides.
-- Every model call goes through the router and a cost ledger (estimated from reported tokens); the run stops calling
-  models once `max_cost_per_brief_usd` is spent.
+- Every model call goes through `call_structured`, which masks e-mail/phone in the outbound messages and checks the
+  brief's cost and time budget before every invocation, retry and fallback. Cost is estimated from reported tokens.
 """
 
 from __future__ import annotations
@@ -46,7 +51,6 @@ from radar.db.schema import audit_log, briefs, tasks
 from radar.db.schema import events as events_t
 from radar.infra import get_db_engine
 from radar.llm import CostLedger, call_structured, get_router
-from radar.privacy import redact_pii
 from radar.tools import ToolContext, call_tool
 
 MAX_REVISIONS = 1
@@ -66,6 +70,7 @@ class BriefState(TypedDict, total=False):
     suppliers: list[dict]
     parts: list[dict]
     counts: dict
+    impact_complete: bool
     draft: dict
     auto_findings: list[str]
     attempts: Annotated[list[dict], operator.add]
@@ -83,6 +88,7 @@ class RunContext:
     ledger: CostLedger = field(default_factory=CostLedger)
     tools: ToolContext = field(default_factory=ToolContext)
     drafted_by: str = ""
+    started: float = field(default_factory=time.time)
 
 
 _RUNS: dict[str, RunContext] = {}
@@ -104,23 +110,34 @@ def _callbacks(config: RunnableConfig) -> list:
     return cbs
 
 
-def _budget_spent(config: RunnableConfig) -> bool:
-    """True once the estimated cost of this brief has reached RADAR_MAX_COST_PER_BRIEF_USD (<= 0 disables the limit)."""
+def _budget_spent(config: RunnableConfig) -> str:
+    """Why no further model call may start for this brief, or "" if one may. Checked by call_structured before every
+    invocation, retry and fallback. Cost: RADAR_MAX_COST_PER_BRIEF_USD (estimated; calls with unknown prices count $0
+    and are reported as `unpriced_calls`). Time: RADAR_MAX_SECONDS_PER_BRIEF. <= 0 disables either."""
+    rc = run_context(config)
     cap = settings.max_cost_per_brief_usd
-    return cap > 0 and run_context(config).ledger.cost_usd >= cap
+    if cap > 0 and rc.ledger.cost_usd >= cap:
+        return f"cost budget of ${cap} per brief reached (estimated ${rc.ledger.cost_usd:.4f})"
+    limit = settings.max_seconds_per_brief
+    if limit > 0 and time.time() - rc.started >= limit:
+        return f"time budget of {limit:.0f}s per brief reached"
+    return ""
 
 
-def _fmt_evidence(evidence: list[dict], limit: int = 12, max_chars: int = 480) -> str:
-    """Evidence block for a model prompt: first `limit` unique passages, e-mail/phone masked (provider-bound text)."""
-    seen, lines = set(), []
+def _guard(config: RunnableConfig):
+    return lambda: _budget_spent(config)
+
+
+def _fmt_evidence(evidence: list[dict], limit: int = 12, max_chars: int = 480, first: set[str] | None = None) -> tuple[str, set[str]]:
+    """Evidence block for a model prompt: up to `limit` unique passages, the citations in `first` before any others.
+    Returns the text and the set of citations included. (E-mail/phone masking happens at the call boundary.)"""
+    unique: dict[str, dict] = {}
     for h in evidence:
-        if h["citation"] in seen:
-            continue
-        seen.add(h["citation"])
-        lines.append(f"[{h['citation']}] ({h.get('doc_type')}) {redact_pii(h['text'][:max_chars])[0]}")
-        if len(lines) >= limit:
-            break
-    return "\n".join(lines) or "(no passages retrieved)"
+        unique.setdefault(h["citation"], h)
+    order = [c for c in unique if c in (first or set())] + [c for c in unique if c not in (first or set())]
+    shown = order[:limit]
+    lines = [f"[{c}] ({unique[c].get('doc_type')}) {unique[c]['text'][:max_chars]}" + (" [...]" if len(unique[c]["text"]) > max_chars else "") for c in shown]
+    return "\n".join(lines) or "(no passages retrieved)", set(shown)
 
 
 # ---------------- nodes ----------------
@@ -153,7 +170,7 @@ def decompose(state: BriefState, config: RunnableConfig) -> dict:
         return {"sub_questions": research_queries([], state["event"]["topic"].replace("_", " "))}
     try:
         out = call_structured(get_router().for_task("decompose"), SubQuestions, [SystemMessage(SYSTEM), HumanMessage(DECOMPOSE.format(event=json.dumps(state["event"], ensure_ascii=False)))],
-                              config={"callbacks": _callbacks(config)}, attempts=2)
+                              config={"callbacks": _callbacks(config)}, attempts=2, budget_spent=_guard(config))
         qs = out.sub_questions
     except Exception:
         qs = []
@@ -177,22 +194,43 @@ def research(payload: dict, config: RunnableConfig) -> dict:
     return {"evidence": hits}
 
 
+MAX_PAGES = 50  # safety bound on pagination; hitting it marks the impact incomplete instead of looping forever
+
+
+def _all_pages(ctx, tool: str, args: dict, key: str, page: int) -> tuple[list[dict], int, bool]:
+    """Every match of a paginated lookup. Returns (items, exact total, complete)."""
+    items: list[dict] = []
+    total = 0
+    for _ in range(MAX_PAGES):
+        r = call_tool(ctx, tool, args | {"limit": page, "offset": len(items)})
+        batch, total = r.get(key, []), r.get("count", 0)
+        items += batch
+        if not batch or len(items) >= total:
+            return items, total, len(items) >= total
+    return items, total, False
+
+
 def map_impact(state: BriefState, config: RunnableConfig) -> dict:
+    """Candidate impact from SQL: every supplier and part matching the event's materials (and country, for
+    location-scoped topics), paginated so the totals are exact rather than capped at one page. Materials and countries
+    come from keyword matching (triage), so this is candidate impact for review, not legal applicability."""
     ctx = run_context(config).tools
     mats, countries = state["materials"], state.get("countries") or []
     sup: list[dict] = []
+    complete = True
     if mats:
-        if countries:
-            for c in countries:
-                sup += call_tool(ctx, "lookup_suppliers", {"materials": mats, "country": c, "limit": 100})["suppliers"]
-        else:
-            sup = call_tool(ctx, "lookup_suppliers", {"materials": mats, "limit": 100})["suppliers"]
+        for c in (countries or [None]):
+            got, _, ok = _all_pages(ctx, "lookup_suppliers", {"materials": mats} | ({"country": c} if c else {}), "suppliers", 100)
+            sup += got
+            complete &= ok
     # Priority: tier 1 first, then risk flags, then lowest RBA audit score.
     sup.sort(key=lambda s: (s["tier"], -len(s["risk_flags"]), s["rba_audit_score"]))
     sup_ids = {s["supplier_id"] for s in sup}
     parts: list[dict] = []
     for m in mats:
-        parts += call_tool(ctx, "lookup_bom", {"material": m, "limit": 200})["parts"]
+        got, _, ok = _all_pages(ctx, "lookup_bom", {"material": m}, "parts", 200)
+        parts += got
+        complete &= ok
     parts = [p for p in parts if p["supplier_id"] in sup_ids] if countries else parts
     products = sorted({pp["product_id"] for p in parts for pp in p["products"]})
     # Contract clauses for the top suppliers that have a contract on file.
@@ -201,7 +239,7 @@ def map_impact(state: BriefState, config: RunnableConfig) -> dict:
         extra += call_tool(ctx, "search_documents", {"query": "notification of regulatory change and material declarations", "k": 2, "supplier_id": s["supplier_id"]}).get("hits", [])
     counts = {"suppliers": len(sup), "parts": len(parts), "products": len(products), "tier1_suppliers": sum(1 for s in sup if s["tier"] == 1),
               "suppliers_with_risk_flags": sum(1 for s in sup if s["risk_flags"])}
-    return {"suppliers": sup, "parts": parts, "counts": counts, "evidence": extra}
+    return {"suppliers": sup, "parts": parts, "counts": counts, "impact_complete": complete, "evidence": extra}
 
 
 def draft(state: BriefState, config: RunnableConfig) -> dict:
@@ -211,12 +249,10 @@ def draft(state: BriefState, config: RunnableConfig) -> dict:
     top_sup = [{"supplier_id": s["supplier_id"], "name": s["name"], "country": s["country"], "tier": s["tier"], "materials": s["materials"], "rba_audit_score": s["rba_audit_score"], "risk_flags": s["risk_flags"]} for s in state["suppliers"][:8]]
     top_parts = [{"part_id": p["part_id"], "material": p["material"], "supplier_id": p["supplier_id"], "products": [pp["product_id"] for pp in p["products"]][:4]} for p in state["parts"][:8]]
     prompt = DRAFT.format(event=json.dumps(state["event"], ensure_ascii=False), counts=json.dumps(state["counts"]), suppliers=json.dumps(top_sup, ensure_ascii=False),
-                          parts=json.dumps(top_parts, ensure_ascii=False), evidence=_fmt_evidence(state["evidence"]), feedback=fb)
+                          parts=json.dumps(top_parts, ensure_ascii=False), evidence=_fmt_evidence(state["evidence"])[0], feedback=fb)
     try:
-        if _budget_spent(config):
-            raise RuntimeError(f"cost budget of ${settings.max_cost_per_brief_usd} per brief reached before drafting")
         written: BriefDraft = call_structured(get_router().for_task("draft_brief"), BriefDraft, [SystemMessage(SYSTEM), HumanMessage(prompt)], config={"callbacks": _callbacks(config)},
-                                              fallback=get_router().cheap)
+                                              fallback=get_router().cheap, budget_spent=_guard(config))
         body = written.model_dump()
         run_context(config).drafted_by = getattr(written, "_model_used", "")
     except Exception as e:
@@ -246,7 +282,44 @@ _HYPHENS = dict.fromkeys(map(ord, "‐‑‒–—−"), "-")  # models write "t
 _COUNT_CLAIM = re.compile(r"(?<![\w.-])(\d[\d,]*)\s+(affected\s+|impacted\s+|tier[- ]?1\s+|direct\s+)?(suppliers?|parts?|products?)\b", re.I)
 _COUNT_KEY = {"supplier": "suppliers", "part": "parts", "product": "products"}
 # Codes whose presence makes automatic approval false, whatever the critic says.
-STRUCTURAL = {"uncited_action", "no_valid_citation", "count_mismatch"}
+STRUCTURAL = {"uncited_action", "no_valid_citation", "count_mismatch", "partial_review"}
+CRITIC_DRAFT_CHARS = 6000  # with the evidence block this keeps a critic request inside an 8k-token provider limit
+CRITIC_PASSAGES = 12
+
+
+def critic_view(d: dict, counts: dict, evidence: list[dict]) -> tuple[str, str, list[str]]:
+    """What the critic reviews: (draft JSON, evidence block, gaps). Every action and affected item is included with
+    its citation ids; long free text is shortened before anything is dropped. Model-written quotes are left out: the
+    critic compares claims with the retrieved passages themselves, cited passages first. `gaps` lists anything that
+    still did not fit; a non-empty list means the review is partial."""
+    def ids(cs: list[dict] | None) -> list[str]:
+        return [f"{c['doc_id']} §{c['section']}" for c in cs or []]
+
+    view = {"sql_totals": counts, "title": d.get("title"), "summary": d.get("summary"),
+            "actions": [{"n": i + 1, "action": a["action"], "owner_role": a["owner_role"], "deadline": a["deadline"], "citations": ids(a.get("citations"))}
+                        for i, a in enumerate(d.get("actions", []))],
+            "affected": [{"kind": a["kind"], "id": a["id"], "name": a["name"], "why": a["why"], "citations": ids(a.get("citations"))} for a in d.get("affected", [])],
+            "citations": ids(d.get("citations")), "open_questions": d.get("open_questions", [])}
+    text = json.dumps(view, ensure_ascii=False)
+    for cut in (200, 120, 60):  # shorten free text, never drop an item
+        if len(text) <= CRITIC_DRAFT_CHARS:
+            break
+        for a in view["affected"]:
+            a["why"] = a["why"][:cut]
+        for a in view["actions"]:
+            a["action"] = a["action"][: cut * 2]
+        view["open_questions"] = [q[:cut] for q in view["open_questions"]]
+        text = json.dumps(view, ensure_ascii=False)
+    gaps = []
+    if len(text) > CRITIC_DRAFT_CHARS:
+        gaps.append(f"draft too long for a complete critic review ({len(text)} > {CRITIC_DRAFT_CHARS} characters after shortening); later items were not reviewed")
+        text = text[:CRITIC_DRAFT_CHARS] + " ...[CUT: review incomplete]"
+    cited = {c for a in [*d.get("actions", []), *d.get("affected", [])] for c in ids(a.get("citations"))} | set(ids(d.get("citations")))
+    evidence_text, shown = _fmt_evidence(evidence, limit=CRITIC_PASSAGES, first=cited)
+    missing = sorted(c for c in cited if c not in shown)
+    if missing:
+        gaps.append(f"{len(missing)} cited passage(s) did not fit in the critic's evidence: {', '.join(missing[:4])}")
+    return text, evidence_text, gaps
 
 
 def count_claims(summary: str, counts: dict) -> list[str]:
@@ -309,7 +382,7 @@ def verify(state: BriefState, config: RunnableConfig) -> dict:
         for c in item.get("citations", []):
             norm(c)
     d["citations"] = keep_valid(d.get("citations", []), "the brief")
-    kept, renamed = [], []
+    kept, renamed, unresolved = [], [], []
     for a in d.get("affected", []):
         record = {"supplier": sup_by_id, "part": part_by_id, "product": prod_by_id}.get(a["kind"])
         if record is not None:
@@ -333,10 +406,17 @@ def verify(state: BriefState, config: RunnableConfig) -> dict:
             if other:
                 note("policy_id_mismatch", f"{a['kind']} entry {a['id']} cited a different document ({', '.join(c['doc_id'] for c in other)}); citation removed", len(other))
                 a["citations"] = [c for c in a["citations"] if c["doc_id"] == a["id"]]
-            if not a["citations"]:
-                note("uncited_entry", f"{a['kind']} entry {a['id']} has no citation to the section it refers to")
+            # Its identity must be a document this run actually retrieved, and it must cite one of that document's
+            # sections. Otherwise it is not a verified affected item: it moves to the open questions for the reviewer.
+            why = "is not among the retrieved documents" if a["id"] not in ev_docs else "" if a["citations"] else "cites none of its own sections"
+            if why:
+                note("removed_unverified_document", f"{a['kind']} entry {a['id']} {why}; moved to open questions", 1)
+                unresolved.append(f"Unverified {a['kind'].replace('_', ' ')} reference {a['id']} ({a['name'][:60]}): {why}. Check manually.")
+                continue
         kept.append(a)
     d["affected"] = kept
+    if unresolved:
+        d["open_questions"] = list(d.get("open_questions") or []) + unresolved
     if renamed:
         note("name_corrected", f"{len(renamed)} name(s) replaced with the names on record: " + ", ".join(renamed[:3]) + (" ..." if len(renamed) > 3 else ""))
     for act in d.get("actions", []):
@@ -349,24 +429,20 @@ def verify(state: BriefState, config: RunnableConfig) -> dict:
         note("count_mismatch", w)
     if run_context(config).tools.injection_findings:
         note("injection_redacted", f"{len(run_context(config).tools.injection_findings)} instruction-like passage(s) were redacted from retrieved content")
+    # The critic gets a complete, bounded view: every action and affected item with its citations and the SQL totals,
+    # plus the passage of every cited section. If that does not fit, the review is recorded as partial, which blocks
+    # automatic approval like any other structural failure.
+    draft_json, evidence_text, gaps = critic_view(d, state.get("counts") or {}, state["evidence"])
+    for g in gaps:
+        note("partial_review", g)
     findings = [c["detail"] for c in checks]
     structural = [c["detail"] for c in checks if c["structural"]]
-
-    # The critic sees every action and affected item, the SQL totals, and is told when the draft was cut to fit.
-    critic_input = {k: d.get(k) for k in ("title", "summary", "affected", "actions", "citations", "open_questions")}
-    critic_input["sql_totals"] = state.get("counts") or {}
-    draft_json = json.dumps(critic_input, ensure_ascii=False)
-    if len(draft_json) > 6000:
-        slim = dict(critic_input, citations=[{k: c[k] for k in ("doc_id", "section")} for c in d.get("citations", [])])
-        draft_json = json.dumps(slim, ensure_ascii=False)[:6000] + " ...[draft truncated for review]"
     verdict, last_err = None, ""
     try:
-        if _budget_spent(config):
-            raise RuntimeError(f"cost budget of ${settings.max_cost_per_brief_usd} per brief reached")
         v: CriticVerdict = call_structured(get_router().for_task("critic"), CriticVerdict,
                                            [SystemMessage(SYSTEM), HumanMessage(CRITIC.format(event=json.dumps({k: state["event"].get(k) for k in ("title", "summary", "jurisdiction", "topic", "published")}, ensure_ascii=False) if state.get("event") else "(not provided)",
-                                                                                         draft=draft_json, evidence=_fmt_evidence(state["evidence"]), auto_findings=findings or "none"))],
-                                           config={"callbacks": _callbacks(config)}, attempts=2, fallback=get_router().cheap)
+                                                                                         draft=draft_json, evidence=evidence_text, auto_findings=findings or "none"))],
+                                           config={"callbacks": _callbacks(config)}, attempts=2, fallback=get_router().cheap, budget_spent=_guard(config))
         verdict = v.model_dump()
         verdict["critic_model"] = getattr(v, "_model_used", "")
         verdict["critic_ran"] = True
@@ -379,6 +455,7 @@ def verify(state: BriefState, config: RunnableConfig) -> dict:
     # Structural failures are not the critic's to wave through.
     verdict["structural_ok"] = not structural
     verdict["structural_failures"] = structural
+    verdict["review_complete"] = not gaps
     verdict["approved"] = bool(verdict["approved"]) and not structural
     attempt = {"attempt": len(state.get("attempts") or []), "removed": sum(c["removed"] for c in checks), "codes": sorted({c["code"] for c in checks}),
                "structural_ok": not structural, "critic_ran": verdict["critic_ran"], "critic_approved": verdict.get("critic_approved"),
@@ -405,7 +482,8 @@ def stage(state: BriefState, config: RunnableConfig) -> dict:
                                       "_drafted_by": rc.drafted_by or "fallback (no model)", "_n_evidence": len({h['citation'] for h in state['evidence']}),
                                       "_impact": {"supplier_ids": [x["supplier_id"] for x in state["suppliers"]], "part_ids": [x["part_id"] for x in state["parts"]],
                                                   "product_ids": sorted({pp["product_id"] for x in state["parts"] for pp in x["products"]}),
-                                                  "materials": state.get("materials", []), "countries": state.get("countries", [])},
+                                                  "materials": state.get("materials", []), "countries": state.get("countries", []),
+                                                  "complete": state.get("impact_complete", True), "scope": "candidate impact from keyword-matched materials/countries; applicability not checked"},
                                       "_checkpointer": _checkpointer_kind()},
            "cost_usd": cost["cost_usd"], "latency_s": latency, "created_at": datetime.now(UTC).isoformat()}
     eng = get_db_engine()

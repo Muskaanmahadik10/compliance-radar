@@ -8,7 +8,7 @@ import json
 import statistics
 import time
 
-from radar.config import ARTIFACTS_DIR, DATA_DIR, settings
+from radar.config import ARTIFACTS_DIR, settings
 from radar.retrieval.store import DocumentStore
 
 # Hand-written questions with the section that answers them (doc_id, section prefix). Written against the generator's
@@ -76,7 +76,7 @@ HARD: list[tuple[str, str, str]] = [
 def build_golden(hard: bool = False) -> list[dict]:
     if hard:
         return [{"q": q, "doc_id": d, "section_prefix": s} for q, d, s in HARD]
-    docs = json.loads((DATA_DIR / "generated" / "documents.json").read_text(encoding="utf-8"))
+    docs = json.loads((settings.generated_dir / "documents.json").read_text(encoding="utf-8"))
     golden = [{"q": q, "doc_id": d, "section_prefix": s} for q, d, s in GOLDEN]
     # Contract questions: 10 suppliers, two clause types each
     contracts = [d for d in docs if d["doc_type"] == "contract"][:10]
@@ -96,6 +96,11 @@ def evaluate(store: DocumentStore | None = None, k: int = 5) -> dict:
     return out
 
 
+def section_matches(doc_id: str, section: str, gold: dict) -> bool:
+    """Same document and the same section number: gold '1' matches '1 Purpose', not '10 Records' (a prefix test did)."""
+    return doc_id == gold["doc_id"] and section.split(" ")[0] == gold["section_prefix"]
+
+
 def _run(store: DocumentStore, golden: list[dict], k: int) -> list[dict]:
     configs = [("dense", dict(mode="dense", rerank=False)), ("sparse (BM25)", dict(mode="sparse", rerank=False)),
                ("hybrid (RRF)", dict(mode="hybrid", rerank=False)), ("hybrid + rerank", dict(mode="hybrid", rerank=True))]
@@ -106,7 +111,7 @@ def _run(store: DocumentStore, golden: list[dict], k: int) -> list[dict]:
             t0 = time.perf_counter()
             res = store.search(g["q"], k=k, **kw)
             lat.append(time.perf_counter() - t0)
-            rank = next((i for i, h in enumerate(res) if h.doc_id == g["doc_id"] and h.section.startswith(g["section_prefix"])), None)
+            rank = next((i for i, h in enumerate(res) if section_matches(h.doc_id, h.section, g)), None)
             if rank is not None:
                 hitsk += 1
                 rr.append(1 / (rank + 1))

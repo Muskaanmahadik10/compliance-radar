@@ -48,11 +48,29 @@ class Classification:
     jurisdiction: Jurisdiction
     urgency: str
     language: str
-    confidence: float
+    confidence: float  # a heuristic score per tier, not a calibrated probability
     tier: str  # rules | lora | llm
+    resolved: bool = True  # False: no tier was confident and none after it was available, so this is a best guess
 
 
 _HAN = re.compile(r"[一-鿿]")
+
+
+def _count(keyword: str, text: str) -> int:
+    """Occurrences of a jurisdiction keyword. A Latin keyword must start a word ('bis' does not match 'Bisphenol');
+    short ones (acronyms such as 'bis', 'epa', 'eu') must also end one, longer ones may take a plural ending
+    ('directives'). Han-script keywords are matched as substrings."""
+    k = keyword.strip()
+    if _HAN.search(k) or not k:
+        return text.count(k)
+    end = r"(?![a-z0-9])" if len(k) <= 4 else ""
+    return len(re.findall(rf"(?<![a-z0-9]){re.escape(k)}{end}", text))
+
+# Known limitation: topic keywords are plain substrings, so a keyword with an unrelated sense ("strike prices") gives a
+# confident wrong topic. Changing the acceptance policy would need a new frozen test set (the current one was used for
+# development), so it is left as is and documented.
+
+
 # An operational incident outranks the material it happens to mention ("fire at a tantalum capacitor plant" is an incident).
 TOPIC_WEIGHT = {Topic.SUPPLIER_INCIDENT: 3}
 
@@ -77,7 +95,7 @@ def classify_rules(title: str, summary: str = "") -> Classification:
         topic, conf = Topic.OTHER, 0.3
     else:
         conf = min(0.95, 0.5 + 0.45 * scores[topic] / max(total, 1))
-    jscores = {j: sum(text.count(k) for k in kws) for j, kws in JURIS_KEYWORDS.items()}
+    jscores = {j: sum(_count(k, text) for k in kws) for j, kws in JURIS_KEYWORDS.items()}
     juris = max(jscores, key=jscores.get) if max(jscores.values()) > 0 else Jurisdiction.GLOBAL
     urgency = "high" if any(k in text for k in URGENT) else "low" if any(k in text for k in LOW) else "medium"
     return Classification(topic, juris, urgency, detect_language(title + " " + summary), conf, "rules")
@@ -100,7 +118,9 @@ def llm_callback(router=None, callbacks: list | None = None):
     cfg = {"callbacks": list(callbacks or [])}
 
     def _call(prompt: str) -> str:
-        return str(model.invoke(prompt, config=cfg).content)
+        from radar.privacy import redact_pii
+
+        return str(model.invoke(redact_pii(prompt)[0], config=cfg).content)  # outbound: e-mail/phone masked
 
     _call.model_name = getattr(model, "model_name", None) or getattr(model, "model", "?")  # type: ignore[attr-defined]
     return _call
@@ -127,7 +147,9 @@ def classify(title: str, summary: str = "", llm=None, lora=None, lora_min_confid
       1. rules      - free; trusted when a keyword matched clearly (confidence >= 0.6)
       2. lora       - the fine-tuned encoder, if configured; trusted above `lora_min_confidence`
       3. llm        - `llm` is an optional callable(prompt) -> str for whatever is still uncertain
-    Falls back to the best earlier guess if a later tier is unavailable or fails.
+    Falls back to the best earlier guess if a later tier is unavailable or fails; that guess is returned with
+    resolved=False so ingestion can show it as unresolved rather than as a decision. Confidence values are per-tier
+    heuristics (keyword share, softmax, a fixed 0.7 for the LLM), not calibrated probabilities.
     """
     c = classify_rules(title, summary)
     if c.confidence >= 0.6:
@@ -160,4 +182,5 @@ def classify(title: str, summary: str = "", llm=None, lora=None, lora_min_confid
                 return Classification(Topic(t), c.jurisdiction, c.urgency, c.language, 0.7, "llm")
         except Exception:
             pass
+    best.resolved = False
     return best

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from sqlalchemy import JSON, Column, Float, Integer, MetaData, String, Table, Text, insert, select
 
-from radar.config import DATA_DIR
+from radar.config import settings
 from radar.infra import get_db_engine
 
 metadata = MetaData()
@@ -55,7 +55,6 @@ def create_all() -> None:
     eng = get_db_engine()
     metadata.create_all(eng)
     if eng.dialect.name == "postgresql" and str(eng.url) not in _migrated:
-        _migrated.add(str(eng.url))
         # Databases created before deadlines became TEXT had varchar(32)/varchar(64), which rejects valid prompted
         # deadlines such as "within 10 working days of publication" (37 characters). Idempotent.
         from sqlalchemy import text
@@ -63,6 +62,7 @@ def create_all() -> None:
         with eng.begin() as c:
             for col in ("deadline", "owner_role"):
                 c.execute(text(f"ALTER TABLE tasks ALTER COLUMN {col} TYPE TEXT"))
+        _migrated.add(str(eng.url))  # only after the transaction committed: a failed migration is retried next call
 
 
 def erased_doc_ids() -> set[str]:
@@ -78,8 +78,9 @@ def clear_erasures() -> int:
         return c.execute(erasures.delete()).rowcount or 0
 
 
-def load_company(gen_dir: Path = DATA_DIR / "generated") -> dict:
+def load_company(gen_dir: Path | None = None) -> dict:
     """Idempotent load of the generated company into the relational tables."""
+    gen_dir = gen_dir or settings.generated_dir
     create_all()
     eng = get_db_engine()
     sup = json.loads((gen_dir / "suppliers.json").read_text(encoding="utf-8"))

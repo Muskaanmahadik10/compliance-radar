@@ -11,7 +11,7 @@ import argparse
 import json
 from pathlib import Path
 
-from radar.config import DATA_DIR
+from radar.config import settings
 from radar.data.generate import write_all
 from radar.db import clear_erasures, erased_doc_ids, load_company
 
@@ -41,7 +41,7 @@ def purge_erased_sources(gen_dir: Path, doc_ids: set[str] | None = None) -> list
 def build_all(seed: int = 7, reset_erasures: bool = False) -> dict:
     if reset_erasures:
         clear_erasures()
-    gen = DATA_DIR / "generated"
+    gen = settings.generated_dir
     meta = write_all(gen, seed)
     loaded = load_company(gen)  # marks tombstoned documents as deleted
     purged = purge_erased_sources(gen)

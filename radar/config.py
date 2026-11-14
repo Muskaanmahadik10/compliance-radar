@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     # Estimated-cost budget per brief (CostLedger prices; unknown models count as $0). Once spent, the remaining model
     # steps are skipped and the brief is staged with the SQL impact and evidence for manual review. <= 0 disables it.
     max_cost_per_brief_usd: float = 0.10
+    # Wall-clock budget per brief: no new model call starts after this many seconds. <= 0 disables it.
+    max_seconds_per_brief: float = 600.0
     # Output budget per call. Prompt + this must fit the provider's per-request token limit (8k TPM on Groq's free tier).
     max_output_tokens: int = 3000
 
@@ -70,6 +72,9 @@ class Settings(BaseSettings):
     signing_key: str = ""
 
     data_dir: Path = DATA_DIR
+    # Generated company files (suppliers, parts, documents). Tests and the brief evaluation use their own folder, so
+    # they can never restore a document the running app has erased.
+    generated_dir: Path = DATA_DIR / "generated"
     artifacts_dir: Path = ARTIFACTS_DIR
 
     @property

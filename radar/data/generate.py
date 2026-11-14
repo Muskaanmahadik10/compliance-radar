@@ -12,7 +12,7 @@ import json
 import random
 from pathlib import Path
 
-from radar.config import DATA_DIR
+from radar.config import settings
 from radar.data.schemas import MATERIAL_TOPIC, Part, Product, Supplier, Topic
 
 COUNTRIES = ["Taiwan", "China", "Vietnam", "Malaysia", "Japan", "South Korea", "Thailand", "Germany", "United States", "Mexico", "India", "Philippines"]
@@ -201,6 +201,6 @@ def write_all(out_dir: Path, seed: int = 7) -> dict:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--seed", type=int, default=7)
-    ap.add_argument("--out", type=Path, default=DATA_DIR / "generated")
+    ap.add_argument("--out", type=Path, default=settings.generated_dir)
     a = ap.parse_args()
     print(json.dumps(write_all(a.out, a.seed)))

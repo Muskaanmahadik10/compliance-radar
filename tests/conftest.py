@@ -11,3 +11,4 @@ os.environ["RADAR_LLM_PROVIDER"] = "mock"
 os.environ["RADAR_LOCAL_QDRANT_PATH"] = str(_STATE / "qdrant")
 os.environ["RADAR_LOCAL_SQLITE_PATH"] = str(_STATE / "radar.sqlite")
 os.environ["RADAR_ARTIFACTS_DIR"] = str(_STATE / "artifacts")
+os.environ["RADAR_GENERATED_DIR"] = str(_STATE / "generated")  # never rebuild (and so un-erase) the app's own sources
