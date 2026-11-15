@@ -2,7 +2,7 @@
 
 **A compliance and supplier-risk prototype for electronics manufacturers, built on synthetic company data.** When a user polls regulatory and news feeds, a stream worker classifies each item. For an event the user picks, a LangGraph pipeline finds the affected suppliers, parts and products with SQL, retrieves the relevant policy and contract passages, and drafts an impact brief with citations. Deterministic checks then remove invented ids and citations that are not in the retrieved evidence, an LLM critic reviews the draft, and a person approves it before any task is created.
 
-![CI](https://github.com/Muskaanmahadik10/compliance-radar/actions/workflows/ci.yml/badge.svg) ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
+![CI](https://github.com/Muskaanmahadik10/compliance-radar/actions/workflows/ci.yml/badge.svg) [![M8ven Score](https://m8ven.ai/badge/mcp/muskaanmahadik10/compliance-radar)](https://m8ven.ai/mcp/muskaanmahadik10/compliance-radar?s=readme) ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 
 Built with **LangGraph · LangChain · Qdrant (hybrid dense + BM25) · cross-encoder reranking · Redis Streams · PostgreSQL · FastAPI (SSE) · MCP · LoRA (PEFT) · Docker Compose · GitHub Actions**. Runs offline on a laptop with no keys (`RADAR_MODE=local`, mock LLM); the same code runs against real services and real models.
 
@@ -164,7 +164,7 @@ Evaluations: `python -m evaluation.retrieval` · `python -m evaluation.classifie
 
 Fine-tuned classifier tier (optional): `pip install torch --index-url https://download.pytorch.org/whl/cpu && pip install -r requirements-lora.txt` (pinned to the versions it was evaluated with), then set `RADAR_CLASSIFIER_MODEL=models/event-classifier-lora`. The plain Docker image does not include it.
 
-MCP: `python -m radar.mcp_server` exposes search, supplier and BOM lookup, events and brief drafting to Claude Desktop / Claude Code. There is deliberately no tool to approve a brief. MCP results get the same e-mail/phone masking, since the client may pass them to a hosted model. Every tool declares all four MCP tool annotations: five are read-only, and `draft_impact_brief` is marked as writing a pending brief and calling the configured model provider (tested in `tests/test_mcp_annotations.py`).
+MCP: `python -m radar.mcp_server` exposes search, supplier and BOM lookup, events and brief drafting to Claude Desktop / Claude Code. There is deliberately no tool to approve a brief. MCP results get the same e-mail/phone masking, since the client may pass them to a hosted model. Every tool declares all four MCP tool annotations: five are read-only, and `draft_impact_brief` is marked as writing a pending brief and calling the configured model provider (tested in `tests/test_mcp_annotations.py`). The server is listed on the [M8ven MCP Trust Index](https://m8ven.ai/mcp/muskaanmahadik10/compliance-radar) as a verified publisher, re-checked on every push; its static analysis found the six tool handlers match their declared behaviour, with no credential exfiltration, sensitive file access or obfuscation.
 
 ## Repository map
 
