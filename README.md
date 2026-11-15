@@ -2,7 +2,7 @@
 
 **A compliance and supplier-risk prototype for electronics manufacturers, built on synthetic company data.** When a user polls regulatory and news feeds, a stream worker classifies each item. For an event the user picks, a LangGraph pipeline finds the affected suppliers, parts and products with SQL, retrieves the relevant policy and contract passages, and drafts an impact brief with citations. Deterministic checks then remove invented ids and citations that are not in the retrieved evidence, an LLM critic reviews the draft, and a person approves it before any task is created.
 
-![CI](https://github.com/Muskaanmahadik10/compliance-radar/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/Muskaanmahadik10/compliance-radar/actions/workflows/ci.yml/badge.svg) ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 
 Built with **LangGraph · LangChain · Qdrant (hybrid dense + BM25) · cross-encoder reranking · Redis Streams · PostgreSQL · FastAPI (SSE) · MCP · LoRA (PEFT) · Docker Compose · GitHub Actions**. Runs offline on a laptop with no keys (`RADAR_MODE=local`, mock LLM); the same code runs against real services and real models.
 
@@ -144,7 +144,7 @@ What this is not: a proof that the content has no influence left. Briefs whose c
 | **Two runtime modes behind one interface** (embedded Qdrant + fakeredis + SQLite, or real services). | Anyone can run it in a minute; CI runs both, the second against real Qdrant, Redis and Postgres containers. |
 | **Local embeddings, BM25 and reranker (ONNX).** | Company documents are not sent anywhere for retrieval; only selected passages reach the LLM, after masking. |
 | **Retry policy that reads the provider's answer, plus model fallback; no silent mock.** | Per-minute limits are waited out; a daily quota sends the request to the smaller model, recorded on the brief. A real provider without a key now raises an error instead of quietly running the mock. A per-brief cost and time budget is checked before every model call, retries and fallback included. Cost is estimated from reported tokens, so one call can overshoot the cap; calls with unknown prices are counted as `unpriced_calls`. |
-| **Mock chat model implementing the LangChain interface.** | 89 tests and the mock evaluation need no key, so prompt-format and schema bugs fail in CI. |
+| **Mock chat model implementing the LangChain interface.** | 91 tests and the mock evaluation need no key, so prompt-format and schema bugs fail in CI. |
 
 ## Quick start
 
@@ -152,7 +152,7 @@ What this is not: a proof that the content has no influence left. Briefs whose c
 python -m venv .venv && .venv/Scripts/activate        # source .venv/bin/activate on Linux/macOS
 pip install -r requirements.txt
 make data index       # generate the demo company (200 suppliers, 715 parts, 20 products, 52 documents) and index it
-make test             # 89 tests, offline
+make test             # 91 tests, offline
 streamlit run ui/app.py
 ```
 
@@ -164,7 +164,7 @@ Evaluations: `python -m evaluation.retrieval` · `python -m evaluation.classifie
 
 Fine-tuned classifier tier (optional): `pip install torch --index-url https://download.pytorch.org/whl/cpu && pip install -r requirements-lora.txt` (pinned to the versions it was evaluated with), then set `RADAR_CLASSIFIER_MODEL=models/event-classifier-lora`. The plain Docker image does not include it.
 
-MCP: `python -m radar.mcp_server` exposes search, supplier and BOM lookup, events and brief drafting to Claude Desktop / Claude Code. There is deliberately no tool to approve a brief. MCP results get the same e-mail/phone masking, since the client may pass them to a hosted model.
+MCP: `python -m radar.mcp_server` exposes search, supplier and BOM lookup, events and brief drafting to Claude Desktop / Claude Code. There is deliberately no tool to approve a brief. MCP results get the same e-mail/phone masking, since the client may pass them to a hosted model. Every tool declares all four MCP tool annotations: five are read-only, and `draft_impact_brief` is marked as writing a pending brief and calling the configured model provider (tested in `tests/test_mcp_annotations.py`).
 
 ## Repository map
 
@@ -187,7 +187,7 @@ artifacts/                  current results; superseded_af9dd6b/ keeps the pre-a
 colab/train_classifier.ipynb   LoRA fine-tuning of the event classifier
 models/event-classifier-lora/  the trained adapter and its label mapping
 docs/                       DESIGN.md (the original plan + what was built), INTERVIEW_NOTES.md
-tests/                      89 tests (tests/test_audit_fixes.py covers the audit fixes)
+tests/                      91 tests (tests/test_audit_fixes.py covers the audit fixes)
 ```
 
 ## Limitations
@@ -204,6 +204,10 @@ This is a local prototype on synthetic data, not a production service. Known gap
 - **Evaluation size.** 52 headlines, 70 retrieval questions, 11 brief events (3 with real models after the fixes), all English, all against synthetic records. No Chinese evaluation, no RAGAS, no reviewer-time study.
 - **Cost.** The ledger estimates from reported tokens and a price table; unknown models count as $0 and are reported as `unpriced_calls`. Not a bill.
 - Company data (suppliers, BOMs, policies, contracts) is synthetic. Regulatory feeds are real public sources; tests use a replay fixture. Not legal advice.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
 
 ## Author
 
