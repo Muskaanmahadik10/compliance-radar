@@ -11,3 +11,5 @@ data/generated/
 .local-test/
 .local-eval/
 colab/colab results/
+coverage.xml
+.coverage
