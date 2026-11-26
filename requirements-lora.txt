@@ -3,7 +3,7 @@
 # Pinned to the versions the saved adapter was loaded and evaluated with (peft 0.21.2 is also the version recorded
 # in models/event-classifier-lora/adapter_config.json).
 torch==2.15.0
-transformers==5.22.2
-peft==0.21.2
+transformers==5.24.0
+peft==0.22.0
 sentencepiece
 protobuf
